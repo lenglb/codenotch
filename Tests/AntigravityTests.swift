@@ -1,5 +1,4 @@
 import XCTest
-import Sparkle
 @testable import Codenotch
 
 /// Fixtures are the real thing: the keychain payload's shape and the actual
@@ -1244,12 +1243,7 @@ final class UpdateOutcomeTests: XCTestCase {
         XCTAssertTrue(message.contains("1.2.0"))
     }
 
-    /// The distinction the wording depends on: a feed that cannot be fetched is
-    /// routine, anything else is reported as itself.
-    func testOnlyAFeedFailureCountsAsUnreachable() {
-        XCTAssertTrue(Updater.isUnreachable(Int(SUError.appcastError.rawValue)))
-        XCTAssertFalse(Updater.isUnreachable(Int(SUError.installationError.rawValue)))
-    }
+
 }
 
 /// The menu bar mark. Loaded from the asset catalogue rather than drawn from

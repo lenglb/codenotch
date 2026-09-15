@@ -12,10 +12,14 @@ Only windows with a published duration, reset and percentage offer the chart. Re
 
 ## Build
 
-Requires macOS 15+, Xcode and XcodeGen. Run `make build` and `make test` (see [CONTRIBUTING](../CONTRIBUTING.md)). The custom build disables the original app's automatic and manual Sparkle updates so an upstream release cannot replace the fork. Update by pulling/building this repository.
+Requires macOS 15+, Xcode and XcodeGen. Run `make build` and `make test` (see [CONTRIBUTING](../CONTRIBUTING.md)). This fork does not link or embed Sparkle. Its original automatic update service is unused, and loading its framework in an ad-hoc signed hardened-runtime Release app caused a dyld signature rejection before startup. Update by pulling/building this repository.
 
 The fork does not change the upstream bundle identifier. Quit another Codenotch copy before launching it. A local ad-hoc build is not Apple-notarized.
 
 ## Native interaction preview
 
 Launch the built executable with `CODENOTCH_DEMO=trend`. The rings are explicitly labelled Demo and the history is synthetic, in memory only. This mode loads no usage providers. It is used to check window selection, hover scrubbing and the screen-edge card.
+
+## Package startup check
+
+Run `python3 Scripts/check-app-package.py /path/to/Codenotch-Usage-Trend.zip` on macOS before distributing a local build. It extracts the actual ZIP, checks linked dependencies and signatures, then starts the packaged Release executable for three seconds using the existing test-host guard. This loads the real libraries without polling accounts or terminating an existing Codenotch instance. A signature check alone cannot establish launchability.
