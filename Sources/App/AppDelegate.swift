@@ -108,13 +108,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             fleet.setSnapshots(snapshots)
             let history = Fixtures.trendHistory(for: snapshots, now: now)
             fleet.setHistorySamples(history)
-            let preview = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 580, height: 390),
+            let preview = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 580, height: 780),
                                    styleMask: [.titled, .closable], backing: .buffered, defer: false)
             preview.title = "Usage trend · Demo data"
             preview.contentView = NSHostingView(rootView:
                 HStack(alignment: .top, spacing: 20) {
                     ForEach(snapshots) { snapshot in
-                        TooltipCard(snapshot: snapshot, historySamples: history, now: now)
+                        TooltipCard(snapshot: snapshot, activity: ActivitySummary(sessions: (1...15).map { index in
+                            AgentSession(id: "demo-\(index)", name: "Demo session \(index)", detail: "Desktop · Demo",
+                                         state: .idle, waitingFor: nil, since: now.addingTimeInterval(Double(-index) * 60))
+                        }), historySamples: history, now: now)
                     }
                 }.padding(24).background(Color.black).environment(\.colorScheme, .dark)
             )

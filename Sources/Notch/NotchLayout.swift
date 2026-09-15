@@ -137,7 +137,13 @@ enum NotchLayout {
     static let cardWidth     = Design.px(600)
     static let cardCorner    = Design.px(49.5)
     static let cardPadding   = Design.px(32)
-    static let usageTrendHeight = Design.px(630)
+    static let usageTrendHeight = Design.px(500)
+    static let trendCardMaximumHeight: CGFloat = 720
+    static var collapsedSessionsHeight: CGFloat { 2 * blockSpacing + hairline + cardBodyLineHeight }
+    static func usageTrendsHeight(count: Int) -> CGFloat {
+        CGFloat(max(0, count)) * usageTrendHeight
+            + CGFloat(max(0, count - 1)) * (2 * blockSpacing + hairline)
+    }
     static let tailLength    = Design.px(75)
     static let tailHeight    = Design.px(87)
     static let tailGap       = Design.px(28)    // tail tip -> notch body edge
@@ -339,6 +345,8 @@ enum NotchLayout {
                            statusMessage: String? = nil,
                            blockMessage: String? = nil,
                            hasUsageTrend: Bool = false,
+                           trendWindowCount: Int = 1,
+                           trendHeightLimit: CGFloat = trendCardMaximumHeight,
                            hasTokenUsage: Bool = false,
                            hasPlan: Bool = false,
                            hasResetCredits: Bool = false,
@@ -364,7 +372,7 @@ enum NotchLayout {
             height += headerToBlock + modelNameHeight(localModelName)
                 + blockSpacing + rows * cardBodyLineHeight + (rows - 1) * sessionRowGap
         } else if hasUsageTrend {
-            height += headerToBlock + usageTrendHeight
+            height += headerToBlock + usageTrendsHeight(count: trendWindowCount)
         } else if windowCount > 0 {
             let moneyCount = min(max(0, moneyWindowCount), windowCount)
             let fullCount = windowCount - compactRowCount - moneyCount
@@ -413,7 +421,11 @@ enum NotchLayout {
                 + codexChartTop + codexChartHeight
         }
 
-        if sessionCount > 0 {
+        if sessionCount > 0, hasUsageTrend {
+            // Expansion happens inside the bounded scroll view. Its frame and
+            // AppKit hover region stay stable while the disclosure is used.
+            height += collapsedSessionsHeight
+        } else if sessionCount > 0 {
             let shown = min(sessionCount, max(0, sessionCap))
             let row = 2 * cardBodyLineHeight + sessionRowGap
             height += blockSpacing + hairline + blockSpacing
@@ -424,7 +436,7 @@ enum NotchLayout {
                 height += blockSpacing + cardBodyLineHeight
             }
         }
-        return height
+        return hasUsageTrend ? min(height, max(1, trendHeightLimit)) : height
     }
 
     static func modelNameHeight(_ name: String) -> CGFloat {

@@ -955,6 +955,7 @@ private struct SessionList: View {
     /// How many rows this screen has room for; the rest are counted.
     let cap: Int
     var onFocus: ((pid_t) -> Void)? = nil
+    var showsDivider = true
 
     /// Busy sessions first, so what is hidden is what matters least.
     private var ordered: [AgentSession] {
@@ -971,10 +972,12 @@ private struct SessionList: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Rectangle()
-                .fill(Palette.ringTrack)
-                .frame(height: NotchLayout.hairline)
-                .padding(.top, NotchLayout.blockSpacing)
+            if showsDivider {
+                Rectangle()
+                    .fill(Palette.ringTrack)
+                    .frame(height: NotchLayout.hairline)
+                    .padding(.top, NotchLayout.blockSpacing)
+            }
 
             // Only as many as the card's budgeted height can hold. The rest
             // are counted rather than drawn: the card is clipped, not scrolled,
@@ -994,6 +997,42 @@ private struct SessionList: View {
     }
 }
 
+/// Sessions are secondary to quota planning. Keep their disclosure inside the
+/// scroll viewport so expanding a long list cannot displace the hover target.
+private struct CollapsibleSessions: View {
+    let summary: ActivitySummary
+    let now: Date
+    var onFocus: ((pid_t) -> Void)?
+    @State private var expanded = false
+
+    var body: some View {
+        if !summary.sessions.isEmpty {
+            VStack(alignment: .leading, spacing: 0) {
+                Rectangle().fill(Palette.ringTrack)
+                    .frame(height: NotchLayout.hairline)
+                    .padding(.top, NotchLayout.blockSpacing)
+                Button { expanded.toggle() } label: {
+                    HStack {
+                        Image(systemName: expanded ? "chevron.down" : "chevron.right")
+                        Text(L10n.t("Sessions"))
+                        Spacer()
+                        Text(summary.sessions.count.formatted())
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .font(Typography.cardBody)
+                .foregroundStyle(Palette.textSecondary)
+                .padding(.top, NotchLayout.blockSpacing)
+                .accessibilityValue(expanded ? L10n.t("Expanded") : L10n.t("Collapsed"))
+                if expanded {
+                    SessionList(summary: summary, now: now, cap: summary.sessions.count, onFocus: onFocus, showsDivider: false)
+                }
+            }
+        }
+    }
+}
+
 // MARK: - Entry point
 
 struct TooltipCard: View {
@@ -1006,6 +1045,7 @@ struct TooltipCard: View {
     /// How many sessions this screen has room to list. Solved from the display
     /// rather than fixed, so a big screen hides nothing.
     var sessionCap: Int = NotchLayout.defaultSessionCap
+    var trendHeightLimit: CGFloat = NotchLayout.trendCardMaximumHeight
     var resetTimeFormat: ResetTimeFormat = .automatic
     var deepSeekPricingEnabled: Bool = true
     var deepSeekPricingSchedule: DeepSeekPricing.Schedule = .current
@@ -1035,6 +1075,8 @@ struct TooltipCard: View {
             statusMessage: snapshot.statusMessage,
             blockMessage: snapshot.block?.summary(now: now),
             hasUsageTrend: snapshot.hasUsageTrend,
+            trendWindowCount: snapshot.trendWindows.count,
+            trendHeightLimit: trendHeightLimit,
             hasTokenUsage: snapshot.tokenUsage != nil,
             hasPlan: snapshot.plan != nil,
             hasResetCredits: snapshot.resetCredits != nil,
@@ -1048,39 +1090,51 @@ struct TooltipCard: View {
 
     var body: some View {
         TooltipShell(height: height, direction: direction, tailOffset: tailOffset) {
-            // Stacked, not replaced in place: during a swap both sets of rows
-            // exist for a moment, and in a ZStack they overlap and dissolve
-            // instead of shoving each other around. Top-aligned so neither
-            // drifts while the card resizes around them.
-            ZStack(alignment: .topLeading) {
-                VStack(alignment: .leading, spacing: 0) {
-                    ProviderTooltip(activityNote: localActivityNote, snapshot: snapshot, now: now, resetTimeFormat: resetTimeFormat,
-                                    showUsagePace: showUsagePace, historySamples: historySamples)
-                    if let resetCredits = snapshot.resetCredits {
-                        CodexResetCreditsSection(credits: resetCredits, now: now)
-                    }
-                    if let tokenUsage = snapshot.tokenUsage {
-                        CodexUsageSection(usage: tokenUsage, now: now)
-                    }
-                    if let usageDetail = snapshot.usageDetail, usageDetail.hasUsage {
-                        DeepSeekUsageDetail(detail: usageDetail, now: now,
-                                            schedule: deepSeekPricingSchedule,
-                                            showsPricing: deepSeekPricingEnabled)
-                    }
-                    if let activity, snapshot.localModel == nil {
+            if snapshot.hasUsageTrend {
+                ScrollView(.vertical) {
+                    cardContent.fixedSize(horizontal: false, vertical: true)
+                }
+                .frame(height: max(1, height - 2 * NotchLayout.cardPadding))
+                .id(snapshot.id)
+            } else {
+                cardContent
+            }
+        }
+    }
+
+    private var cardContent: some View {
+        ZStack(alignment: .topLeading) {
+            VStack(alignment: .leading, spacing: 0) {
+                ProviderTooltip(activityNote: localActivityNote, snapshot: snapshot, now: now, resetTimeFormat: resetTimeFormat,
+                                showUsagePace: showUsagePace, historySamples: historySamples)
+                if let resetCredits = snapshot.resetCredits {
+                    CodexResetCreditsSection(credits: resetCredits, now: now)
+                }
+                if let tokenUsage = snapshot.tokenUsage {
+                    CodexUsageSection(usage: tokenUsage, now: now)
+                }
+                if let usageDetail = snapshot.usageDetail, usageDetail.hasUsage {
+                    DeepSeekUsageDetail(detail: usageDetail, now: now,
+                                        schedule: deepSeekPricingSchedule,
+                                        showsPricing: deepSeekPricingEnabled)
+                }
+                if let activity, snapshot.localModel == nil {
+                    if snapshot.hasUsageTrend {
+                        CollapsibleSessions(summary: activity, now: now, onFocus: onFocusSession)
+                    } else {
                         SessionList(summary: activity, now: now, cap: sessionCap,
                                     onFocus: onFocusSession)
                     }
                 }
-                // An identity, so one provider's rows are never interpolated
-                // into another's — that is what slid text through positions
-                // belonging to neither layout. A crossfade rather than an
-                // instant swap, so the change is part of the movement instead
-                // of a cut in the middle of it.
-                .id(snapshot.id)
-                .transition(.opacity.animation(NotchMotion.crossfade))
             }
-            .frame(maxWidth: .infinity, alignment: .topLeading)
+            // An identity, so one provider's rows are never interpolated
+            // into another's — that is what slid text through positions
+            // belonging to neither layout. A crossfade rather than an
+            // instant swap, so the change is part of the movement instead
+            // of a cut in the middle of it.
+            .id(snapshot.id)
+            .transition(.opacity.animation(NotchMotion.crossfade))
         }
+        .frame(maxWidth: .infinity, alignment: .topLeading)
     }
 }

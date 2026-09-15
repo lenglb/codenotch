@@ -1,6 +1,8 @@
 # Usage pacing chart (personal fork)
 
-Hover a Codex or Claude ring. Use the arrows above the chart to select any available timed quota window: session, weekly, model-specific weekly, and additional Codex limits supplied by the provider. The selection is remembered per profile. The synthetic Claude Daily pace ring is not a quota cycle and is excluded from chart navigation. If it leads the ring or was selected by an older build, the chart falls back to a real timed quota window; the Daily pace ring setting remains available. The original card surface, typography, accent, bar and session list are retained; the selected window replaces the expanded list so the card stays a fixed height.
+Hover a Codex or Claude ring. All available timed quota charts appear together: session, weekly, model-specific weekly, and additional Codex limits supplied by the provider. Each chart has its own hover cursor and 15-minute controls. The synthetic Claude Daily pace ring is not a quota cycle and is excluded from the charts; the ring setting remains available.
+
+The original card surface, typography and accent are retained. Sessions start collapsed into a single row with a count. Click **Sessions** to expand or collapse the complete list. Cards grow to fit their charts within the display budget; extra charts, account statistics and expanded sessions are vertically scrollable. Expanding sessions keeps the card and its mouse region in place.
 
 - **Target (dashed):** a constant pace from 100% remaining at the start (`reset - duration`) to 0% at reset.
 - **Actual (accent):** locally observed remaining quota, with real observation timestamps. History starts when this build begins collecting it; no historical zeroes or synthetic backfill.
@@ -18,7 +20,7 @@ The fork does not change the upstream bundle identifier. Quit another Codenotch 
 
 ## Native interaction preview
 
-Launch the built executable with `CODENOTCH_DEMO=trend`. The rings are explicitly labelled Demo and the history is synthetic, in memory only. This mode loads no usage providers. It is used to check window selection, hover scrubbing and the screen-edge card.
+Launch the built executable with `CODENOTCH_DEMO=trend`. The rings are explicitly labelled Demo and the history is synthetic, in memory only. This mode loads no usage providers. It is used to check all charts together, independent hover scrubbing, the session disclosure and scrolling.
 
 ## Package startup check
 

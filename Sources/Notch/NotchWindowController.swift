@@ -455,6 +455,8 @@ final class NotchWindowController {
             statusMessage: snapshot.statusMessage,
             blockMessage: snapshot.block?.summary(now: model.now),
             hasUsageTrend: snapshot.hasUsageTrend,
+            trendWindowCount: snapshot.trendWindows.count,
+            trendHeightLimit: model.trendHeightLimit,
             hasTokenUsage: snapshot.tokenUsage != nil,
             hasPlan: snapshot.plan != nil,
             hasResetCredits: snapshot.resetCredits != nil,

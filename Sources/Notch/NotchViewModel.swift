@@ -502,7 +502,9 @@ final class NotchViewModel: ObservableObject {
         // present; assuming four quota windows for every local model overflows laptops.
         let slack = NotchLayout.slack(for: edge,
             maxCardHeight: snapshots.isEmpty ? NotchLayout.maxCardHeight(sessionCap: 0)
-                : contentCardHeight(sessionCap: 0),
+                // Packing must not ask for the screen-dependent limit: that
+                // limit depends on the shape length we are calculating here.
+                : contentCardHeight(sessionCap: 0, trendLimit: NotchLayout.trendCardMaximumHeight),
             notchScale: sizeScale)
         let packed = NotchLayout.shapeLength(cellCount: cellCount, edge: edge,
                                              flare: flare, spacing: 0)
@@ -569,13 +571,12 @@ final class NotchViewModel: ObservableObject {
         guard screenSize != .zero else { return NotchLayout.defaultSessionCap }
         return NotchLayout.sessionsFitting(cardBudget: cardBudget(cellCount: cellCount),
                                            windowCount: NotchLayout.maxWindowCount,
-                                           hasUsageTrend: snapshots.contains { $0.hasUsageTrend },
                                            hasTokenUsage: hasTokenUsage,
                                            hasPlan: hasPlan,
                                            hasResetCredits: hasResetCredits)
     }
 
-    private func contentCardHeight(sessionCap: Int) -> CGFloat {
+    private func contentCardHeight(sessionCap: Int, trendLimit: CGFloat? = nil) -> CGFloat {
         snapshots.map { snapshot in
             NotchLayout.cardHeight(windowCount: snapshot.windows.count,
                 groupCount: Set(snapshot.windows.compactMap(\.group)).count,
@@ -586,6 +587,8 @@ final class NotchViewModel: ObservableObject {
                 statusMessage: snapshot.statusMessage,
                 blockMessage: snapshot.block?.summary(now: now),
                 hasUsageTrend: snapshot.hasUsageTrend,
+                trendWindowCount: snapshot.trendWindows.count,
+                trendHeightLimit: trendLimit ?? trendHeightLimit,
                 hasTokenUsage: snapshot.tokenUsage != nil,
                 hasPlan: snapshot.plan != nil,
                 hasResetCredits: snapshot.resetCredits != nil,
@@ -617,6 +620,21 @@ final class NotchViewModel: ObservableObject {
     /// rather than scaling the four constants below it: at `large` a card sized
     /// against the raw height would be drawn a quarter taller than it was
     /// budgeted for, and run off the bottom of a small display.
+    var trendHeightLimit: CGFloat {
+        guard screenSize != .zero else { return NotchLayout.trendCardMaximumHeight }
+        // Cards remain at 1:1 while the notch scales. Budget in actual screen
+        // points, matching panelSize; do not divide the card by sizeScale.
+        let available: CGFloat
+        if edge.isVertical {
+            available = screenSize.height - shapeLength(cellCount: snapshots.count) * sizeScale
+                - 2 * NotchLayout.cardCorner
+        } else {
+            available = screenSize.height - (contentInset + NotchLayout.bodyDepth(for: edge)) * sizeScale
+                - NotchLayout.tailLength - NotchLayout.tailGap
+        }
+        return min(NotchLayout.trendCardMaximumHeight, max(1, available))
+    }
+
     private func cardBudget(cellCount: Int) -> CGFloat {
         if edge.isVertical {
             return screenSize.height / sizeScale

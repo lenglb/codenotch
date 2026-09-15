@@ -25,36 +25,51 @@ extension ProviderSnapshot {
     }
 }
 
-/// Shares the card's typography, tracks and accent. Selecting a different
-/// window never changes the card's height or moves it out from under the mouse.
+/// Every real quota cycle is expanded together. Each plot owns its cursor so
+/// inspecting one window never changes the other windows' readings.
 struct UsageTrendSection: View {
     let snapshot: ProviderSnapshot
     let samples: [UsageSample]
     let now: Date
+    var resetTimeFormat: ResetTimeFormat = .automatic
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: NotchLayout.blockSpacing) {
+            ForEach(Array(snapshot.trendWindows.enumerated()), id: \.element.id) { index, window in
+                if index > 0 {
+                    Rectangle().fill(Palette.ringTrack).frame(height: NotchLayout.hairline)
+                }
+                UsageWindowChart(snapshot: snapshot, window: window, samples: samples,
+                                 now: now, resetTimeFormat: resetTimeFormat)
+            }
+        }
+    }
+}
+
+private struct UsageWindowChart: View {
+    let snapshot: ProviderSnapshot
+    let window: LimitWindow
+    let samples: [UsageSample]
+    let now: Date
     let resetTimeFormat: ResetTimeFormat
-    @AppStorage private var selectedID: String
     @State private var inspectedDate: Date?
     @Environment(\.codenotchAccentColor) private var accent
 
-    init(snapshot: ProviderSnapshot, samples: [UsageSample], now: Date,
-         resetTimeFormat: ResetTimeFormat = .automatic) {
-        self.snapshot = snapshot
-        self.samples = samples
-        self.now = now
-        self.resetTimeFormat = resetTimeFormat
-        _selectedID = AppStorage(wrappedValue: "", "usageTrend.window.\(snapshot.id)")
-    }
-
-    private var window: LimitWindow? {
-        snapshot.selectedTrendWindow(id: selectedID)
-    }
-
     var body: some View {
-        VStack(alignment: .leading, spacing: Design.px(14)) {
-            if let window,
-               let trend = UsageTrend(providerID: snapshot.id, window: window, samples: samples, now: now,
+        VStack(alignment: .leading, spacing: Design.px(10)) {
+            if let trend = UsageTrend(providerID: snapshot.id, window: window, samples: samples, now: now,
                                       accountFingerprint: snapshot.usageAccountFingerprint) {
-                selector(window)
+                HStack {
+                    Text([window.group, window.label].compactMap { $0 }.joined(separator: " · "))
+                        .fontWeight(.semibold)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.75)
+                        .help([window.group, window.label].compactMap { $0 }.joined(separator: " · "))
+                    Spacer(minLength: Design.px(8))
+                    Text(percent(1 - min(window.usedFraction ?? 0, 1)) + " " + L10n.t("remaining"))
+                        .monospacedDigit()
+                }
+                .foregroundStyle(Palette.textPrimary)
                 HStack {
                     Text(ResetCopy.text(for: trend.end, now: now, format: resetTimeFormat))
                     Spacer(minLength: 0)
@@ -64,56 +79,15 @@ struct UsageTrendSection: View {
                 .lineLimit(1)
                 .minimumScaleFactor(0.85)
 
-                GeometryReader { proxy in
-                    Capsule().fill(Palette.barTrack)
-                    Capsule().fill(accent)
-                        .frame(width: proxy.size.width * min(max(window.usedFraction ?? 0, 0), 1))
-                }
-                .frame(height: NotchLayout.barHeight)
-                Text(window.summary)
-                    .foregroundStyle(Palette.textPrimary)
-                    .lineLimit(1)
-
                 UsageTrendPlot(trend: trend, inspectedDate: $inspectedDate, now: now)
-                    .frame(height: Design.px(255))
-
+                    .frame(height: Design.px(225))
                 readout(trend: trend)
                 allowance(trend: trend)
             }
         }
         .font(Typography.cardBody)
         .frame(height: NotchLayout.usageTrendHeight, alignment: .top)
-        .onChange(of: window?.id) { _, _ in inspectedDate = nil }
-        .onChange(of: window?.resetsAt) { _, _ in inspectedDate = nil }
-    }
-
-    private func selector(_ window: LimitWindow) -> some View {
-        // Inline arrows avoid a pop-up extending beyond the notch's hover
-        // region. Every chartable provider window remains one click away.
-        HStack(spacing: Design.px(12)) {
-            Button { select(-1) } label: { Image(systemName: "chevron.left") }
-                .accessibilityLabel(L10n.t("Previous usage window"))
-            Text([window.group, window.label].compactMap { $0 }.joined(separator: " · "))
-                .fontWeight(.semibold)
-                .foregroundStyle(Palette.textPrimary)
-                .frame(maxWidth: .infinity)
-                .lineLimit(1)
-                .minimumScaleFactor(0.75)
-                .help([window.group, window.label].compactMap { $0 }.joined(separator: " · "))
-            Button { select(1) } label: { Image(systemName: "chevron.right") }
-                .accessibilityLabel(L10n.t("Next usage window"))
-        }
-        .buttonStyle(.plain)
-        .foregroundStyle(Palette.textSecondary)
-        .frame(height: Design.px(36))
-    }
-
-    private func select(_ offset: Int) {
-        let windows = snapshot.trendWindows
-        guard !windows.isEmpty else { return }
-        let index = windows.firstIndex { $0.id == window?.id } ?? 0
-        selectedID = windows[(index + offset + windows.count) % windows.count].id
-        inspectedDate = nil
+        .onChange(of: window.resetsAt) { _, _ in inspectedDate = nil }
     }
 
     private func readout(trend: UsageTrend) -> some View {

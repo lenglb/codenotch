@@ -58,12 +58,20 @@ final class UsageTrendChartTests: XCTestCase {
         XCTAssertNil(value.selectedTrendWindow(id: "no-duration"))
     }
 
-    func testChartBudgetReplacesWindowRowsAndGroupsWithoutGrowingForMoreWindows() {
+    func testAllChartsGrowTheCardAndOverflowUsesABoundedViewport() {
         let single = NotchLayout.cardHeight(windowCount: 1, hasUsageTrend: true)
-        let multiple = NotchLayout.cardHeight(windowCount: 12, groupCount: 5, hasUsageTrend: true)
-        XCTAssertEqual(single, multiple)
-        XCTAssertEqual(single, 2 * NotchLayout.cardPadding + max(NotchLayout.glyphSize, NotchLayout.cardTitleLineHeight)
-                       + NotchLayout.headerToBlock + NotchLayout.usageTrendHeight, accuracy: 0.01)
+        let two = NotchLayout.cardHeight(windowCount: 2, hasUsageTrend: true, trendWindowCount: 2)
+        let many = NotchLayout.cardHeight(windowCount: 12, groupCount: 5, hasUsageTrend: true,
+                                         trendWindowCount: 12, trendHeightLimit: 500)
+        XCTAssertEqual(two - single, NotchLayout.usageTrendHeight + 2 * NotchLayout.blockSpacing
+                       + NotchLayout.hairline, accuracy: 0.01)
+        XCTAssertEqual(many, 500)
+        let oneSession = NotchLayout.cardHeight(windowCount: 2, sessionCount: 1,
+                                               hasUsageTrend: true, trendWindowCount: 2)
+        let manySessions = NotchLayout.cardHeight(windowCount: 2, sessionCount: 100,
+                                                 hasUsageTrend: true, trendWindowCount: 2)
+        XCTAssertEqual(oneSession, manySessions)
+        XCTAssertEqual(oneSession - two, NotchLayout.collapsedSessionsHeight, accuracy: 0.01)
     }
 
     func testTrendAndAccountActivityFitEveryScreenEdge() {
@@ -78,6 +86,27 @@ final class UsageTrendChartTests: XCTestCase {
                 let panel = model.panelSize(cellCount: 3)
                 XCTAssertLessThanOrEqual(panel.height, height, "\(edge), \(height)")
                 XCTAssertLessThanOrEqual(panel.width, 1512, "\(edge), \(height)")
+            }
+        }
+    }
+
+    func testManyChartsFitSmallScreensAtEveryEdgeAndScale() {
+        for edge in NotchEdge.allCases {
+            for scale in NotchSize.allCases.map(\.scale) {
+                let model = NotchViewModel()
+                model.edge = edge
+                model.sizeScale = scale
+                model.screenSize = CGSize(width: 1280, height: 800)
+                var codex = snapshot()
+                codex.windows = (0..<12).map { index in
+                    LimitWindow(id: "quota-\(index)", label: "Weekly", usedFraction: 0.2,
+                                resetsAt: now.addingTimeInterval(302400), duration: 604800)
+                }
+                codex.tokenUsage = CodexTokenUsage()
+                model.snapshots = [codex, snapshot(id: "claude")]
+                let panel = model.panelSize(cellCount: 2)
+                XCTAssertLessThanOrEqual(panel.height, 800.01, "\(edge), \(scale)")
+                XCTAssertLessThanOrEqual(panel.width, 1280.01)
             }
         }
     }
@@ -103,7 +132,7 @@ final class UsageTrendChartTests: XCTestCase {
                 renderer.scale = 3
                 let image = try XCTUnwrap(renderer.nsImage)
                 XCTAssertEqual(image.size.width, NotchLayout.cardWidth, accuracy: 1)
-                XCTAssertEqual(image.size.height, NotchLayout.usageTrendHeight + 2 * NotchLayout.cardPadding, accuracy: 1)
+                XCTAssertEqual(image.size.height, NotchLayout.usageTrendsHeight(count: 2) + 2 * NotchLayout.cardPadding, accuracy: 1)
                 if let directory = ProcessInfo.processInfo.environment["TREND_RENDER_DIR"] {
                     let data = try XCTUnwrap(image.tiffRepresentation)
                     let png = try XCTUnwrap(NSBitmapImageRep(data: data)?.representation(using: .png, properties: [:]))

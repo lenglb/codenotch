@@ -1,6 +1,6 @@
 ## Personal fork: usage pacing
 
-This fork adds a native hover chart for Codex and Claude quota windows, including provider-supplied model limits such as Fable Weekly. Compare remaining quota against a constant pace, inspect 15-minute steps, and see the budget available until reset. The original design is retained. [Usage, limitations and building](docs/usage-trend.md). Upstream automatic updates are disabled for this custom build. The downloads described below are the original app, without this fork’s changes.
+This fork shows all native hover charts together for Codex and Claude quota windows, including provider-supplied model limits such as Fable Weekly. Compare remaining quota against a constant pace, inspect 15-minute steps, and see the budget available until reset. Sessions are collapsed by default, with scrolling for longer cards. The original design is retained. [Usage, limitations and building](docs/usage-trend.md). Upstream automatic updates are disabled for this custom build. The downloads described below are the original app, without this fork’s changes.
 
 ---
 
