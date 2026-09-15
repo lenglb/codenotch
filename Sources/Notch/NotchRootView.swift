@@ -103,6 +103,7 @@ struct NotchRootView: View {
                     TooltipCard(
                         snapshot: snapshot,
                         activity: model.activity(for: snapshot),
+                        historySamples: model.historySamples,
                         now: model.now,
                         direction: model.edge.tooltipDirection,
                         sessionCap: model.sessionCap,
@@ -404,6 +405,7 @@ struct NotchRootView: View {
                 sessionCap: model.sessionCap,
                 statusMessage: snapshot.statusMessage,
                 blockMessage: snapshot.block?.summary(now: model.now),
+                hasUsageTrend: snapshot.hasUsageTrend,
                 hasTokenUsage: snapshot.tokenUsage != nil,
                 hasPlan: snapshot.plan != nil,
                 hasResetCredits: snapshot.resetCredits != nil,
@@ -437,6 +439,7 @@ struct NotchRootView: View {
                 sessionCap: model.sessionCap,
                 statusMessage: snapshot.statusMessage,
                 blockMessage: snapshot.block?.summary(now: model.now),
+                hasUsageTrend: snapshot.hasUsageTrend,
                 hasTokenUsage: snapshot.tokenUsage != nil,
                 hasPlan: snapshot.plan != nil,
                 hasResetCredits: snapshot.resetCredits != nil,

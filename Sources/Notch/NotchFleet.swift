@@ -26,6 +26,7 @@ final class NotchFleet {
     private var edge: NotchEdge
     private var visibility: NotchVisibility = .onHover
     private var snapshots: [ProviderSnapshot] = []
+    private var historySamples: [UsageSample] = []
     private(set) var thinkingModels: [String: Date] = [:]
     /// Per source, the way the view model keeps them: the Ollama relay and
     /// the LM Studio log each replace their own readings wholesale.
@@ -230,6 +231,11 @@ final class NotchFleet {
 
     // MARK: - Readings
 
+    func setHistorySamples(_ samples: [UsageSample]) {
+        historySamples = samples
+        for model in models { model.historySamples = samples }
+    }
+
     func setSnapshots(_ snapshots: [ProviderSnapshot]) {
         self.snapshots = snapshots
         let now = Date()
@@ -415,6 +421,7 @@ final class NotchFleet {
         controller.onToggleKeepOpen = onToggleKeepOpen
         controller.signInItems = signInItems
         controller.model.updateSnapshots(snapshots)
+        controller.model.historySamples = historySamples
         controller.model.thinkingModels = thinkingModels
         controller.model.localActivities = localActivities
         controller.model.setLocalMetricsEnabled(localMetricsEnabled)

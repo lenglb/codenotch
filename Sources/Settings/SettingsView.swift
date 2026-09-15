@@ -583,7 +583,7 @@ struct SettingsView: View {
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
 
-                Toggle(L10n.t("Show Spark and code review"), isOn: $preferences.showCodexExtraLimits)
+                Toggle(L10n.t("Show additional model limits and code review"), isOn: $preferences.showCodexExtraLimits)
                     .onChange(of: preferences.showCodexExtraLimits) { _ in
                         for account in providers() where CodexProfile.isCodex(providerID: account.id) {
                             usageStore?.refresh(providerID: account.id)

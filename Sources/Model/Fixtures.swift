@@ -46,3 +46,40 @@ enum Fixtures {
         ]
     }
 }
+
+extension Fixtures {
+    /// Opt-in native interaction fixture: no provider or credential is loaded.
+    static func trendSnapshots(now: Date = Date()) -> [ProviderSnapshot] {
+        ["codex", "claude"].map { id in
+            ProviderSnapshot(id: id, displayName: id == "codex" ? "Codex · Demo" : "Claude · Demo",
+                             glyph: id == "codex" ? .openai : .claude,
+                             fidelity: .manual, status: .ok, windows: [
+                                LimitWindow(id: "primary", label: L10n.t("5h limit"), usedFraction: 0.65,
+                                            resetsAt: now.addingTimeInterval(9000), duration: 18000),
+                                LimitWindow(id: "secondary", label: L10n.t("Weekly limit"), usedFraction: 0.32,
+                                            resetsAt: now.addingTimeInterval(302400), duration: 604800),
+                                LimitWindow(id: "fable-demo-secondary", group: "Fable", label: L10n.t("Weekly limit"),
+                                            usedFraction: 0.58, resetsAt: now.addingTimeInterval(302400), duration: 604800)
+                             ], headlineID: "primary", weeklyID: "secondary")
+        }
+    }
+
+    static func trendHistory(for snapshots: [ProviderSnapshot], now: Date) -> [UsageSample] {
+        snapshots.flatMap { snapshot in
+            snapshot.windows.flatMap { window -> [UsageSample] in
+                guard let end = window.resetsAt, let duration = window.duration,
+                      let used = window.usedFraction else { return [] }
+                let start = end.addingTimeInterval(-duration)
+                let count = Int(now.timeIntervalSince(start) / 900)
+                let cycle = UsageSample.CycleIdentity(providerID: snapshot.id, windowID: window.id,
+                                                      resetsAt: end, duration: duration)
+                return (0...count).map { index in
+                    let progress = Double(index) / Double(max(count, 1))
+                    let consumed = used * (0.75 * progress + 0.25 * progress * progress)
+                    return UsageSample(cycle: cycle, measuredAt: start.addingTimeInterval(Double(index) * 900),
+                                       remainingFraction: 1 - consumed)
+                }
+            }
+        }
+    }
+}

@@ -110,8 +110,13 @@ final class CodexProfileTests: XCTestCase {
         let workReading = try await w.fetchSnapshot()
         XCTAssertEqual(personalReading.id, "codex")
         XCTAssertEqual(personalReading.usedFraction, 0.10)
+        XCTAssertNotNil(personalReading.usageMeasuredAt)
+        XCTAssertEqual(personalReading.usageAccountFingerprint,
+                       UsageAccountFingerprint.sha256("personal"))
         XCTAssertEqual(workReading.id, "codex-work")
         XCTAssertEqual(workReading.usedFraction, 0.75)
+        XCTAssertEqual(workReading.usageAccountFingerprint,
+                       UsageAccountFingerprint.sha256("work"))
 
         try writeAuth(work, account: "work", token: "rotated-token")
         let rotated = try await w.fetchSnapshot()

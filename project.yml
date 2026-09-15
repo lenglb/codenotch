@@ -103,8 +103,9 @@ targets:
         # Set explicitly so Sparkle never asks on first launch. Left unset, it
         # shows a "check for updates automatically?" prompt, which is exactly
         # the permission this is meant to avoid.
-        SUEnableAutomaticChecks: true
-        SUAutomaticallyUpdate: true
+        CodenotchForkBuild: true
+        SUEnableAutomaticChecks: false
+        SUAutomaticallyUpdate: false
         SUScheduledCheckInterval: 86400
     settings:
       base:

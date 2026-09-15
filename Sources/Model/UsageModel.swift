@@ -1,4 +1,13 @@
 import Foundation
+import CryptoKit
+
+enum UsageAccountFingerprint {
+    /// Hash an already-known, non-secret vendor account identifier before it
+    /// enters history. Authentication tokens are never valid input here.
+    static func sha256(_ accountID: String) -> String {
+        SHA256.hash(data: Data(accountID.utf8)).map { String(format: "%02x", $0) }.joined()
+    }
+}
 
 /// How much to trust a provider's numbers. The UI never presents a derived or
 /// manual figure as if a vendor had published it.
@@ -276,6 +285,13 @@ struct ProviderSnapshot: Identifiable, Equatable {
     /// Provider-owned online usage detail, such as DeepSeek's API key/model
     /// breakdown and daily token/cost series.
     var usageDetail: ProviderUsageDetail? = nil
+    /// When the provider actually observed these numbers. Cache-backed sources
+    /// set their original timestamp so polling the same reading cannot create
+    /// artificial history points.
+    var usageMeasuredAt: Date? = nil
+    /// SHA-256 of a vendor-owned, non-secret account identifier. History uses
+    /// it to avoid joining readings from different sign-ins.
+    var usageAccountFingerprint: String? = nil
 
     /// The number on the cell: the provider's declared primary window — for
     /// Claude, the current session.

@@ -56,6 +56,7 @@ actor CodexLocalProvider: UsageProvider {
         request.setValue("no-cache, no-store", forHTTPHeaderField: "Cache-Control")
 
         let (data, response) = try await session.data(for: request)
+        let usageMeasuredAt = Date()
         let http = response as? HTTPURLResponse
         let status = http?.statusCode ?? 0
         if status == 401 || status == 403 { throw UsageProviderError.needsAuth }
@@ -98,7 +99,9 @@ actor CodexLocalProvider: UsageProvider {
             weeklyID: "secondary",
             tokenUsage: profileUsage,
             plan: CodexUsage.plan(from: data) ?? account()?.plan?.nonEmptyPlan,
-            resetCredits: await resetCredits
+            resetCredits: await resetCredits,
+            usageMeasuredAt: usageMeasuredAt,
+            usageAccountFingerprint: UsageAccountFingerprint.sha256(credential.accountID)
         )
     }
 

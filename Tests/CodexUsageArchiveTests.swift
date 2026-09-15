@@ -25,6 +25,19 @@ final class CodexUsageArchiveTests: XCTestCase {
         return UsageArchive(defaults: defaults).load()[snapshot.id]?.snapshot
     }
 
+    func testAccountFingerprintAndObservationTimeSurviveRelaunch() throws {
+        let defaults = makeDefaults()
+        let date = Date(timeIntervalSince1970: 1_800_000_000)
+        var value = snapshot(windows: [LimitWindow(id: "primary", label: "5h limit", usedFraction: 0.2)])
+        value.usageAccountFingerprint = "opaque-fixture-hash"
+        value.usageMeasuredAt = date
+        let archive = UsageArchive(defaults: defaults)
+        archive.save(["codex": (value, date)])
+        let restored = try XCTUnwrap(archive.load()["codex"]?.snapshot)
+        XCTAssertEqual(restored.usageAccountFingerprint, value.usageAccountFingerprint)
+        XCTAssertEqual(restored.usageMeasuredAt, date)
+    }
+
     /// Spark is a live quota, not leftover rollout data. Reloading it after
     /// a relaunch is the archive's job.
     func testAnArchivedSparkWindowSurvivesRelaunch() {
@@ -52,6 +65,27 @@ final class CodexUsageArchiveTests: XCTestCase {
         ]))
         XCTAssertEqual(restored?.windows.map(\.id), ["spark"])
         XCTAssertEqual(restored?.windows.first?.usedFraction, 0.5)
+    }
+
+    func testADynamicAdditionalWindowSurvivesRelaunch() {
+        let restored = roundTrip(snapshot(windows: [
+            LimitWindow(id: "codex-additional-fable-weekly-1234", group: "Fable Weekly",
+                        label: "Weekly limit", usedFraction: 0.61)
+        ]))
+        XCTAssertEqual(restored?.windows.map(\.id),
+                       ["codex-additional-fable-weekly-1234"])
+        XCTAssertEqual(restored?.windows.first?.group, "Fable Weekly")
+    }
+
+    func testLegacyUnknownAndRolloutIDsStayExcludedBesideDynamicWindows() {
+        let restored = roundTrip(snapshot(windows: [
+            LimitWindow(id: "codex-additional-fable-weekly-1234", label: "Weekly limit",
+                        usedFraction: 0.61),
+            LimitWindow(id: "rollout-foo", label: "Rollout", usedFraction: 0.9),
+            LimitWindow(id: "legacy-unknown", label: "Unknown", usedFraction: 0.8)
+        ]))
+        XCTAssertEqual(restored?.windows.map(\.id),
+                       ["codex-additional-fable-weekly-1234"])
     }
 
     func testLiveWindowsOnAnExtraProfileSurviveAndUnknownOnesDoNot() {

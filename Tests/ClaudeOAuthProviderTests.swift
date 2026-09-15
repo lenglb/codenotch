@@ -64,6 +64,7 @@ final class ClaudeOAuthProviderTests: XCTestCase {
                        "the next tick never reached the endpoint")
         XCTAssertEqual(snapshot.status, .ok)
         XCTAssertEqual(snapshot.windows.first?.id, "session")
+        XCTAssertNotNil(snapshot.usageMeasuredAt)
     }
 
     /// A keychain read that failed must not stop the next tick from reading again.
@@ -160,6 +161,7 @@ final class ClaudeOAuthProviderTests: XCTestCase {
         let snapshot = try await provider.fetchSnapshot()
 
         XCTAssertEqual(snapshot.windows.map(\.id), ["session", "weekly_all"])
+        XCTAssertNotNil(snapshot.usageMeasuredAt)
         XCTAssertEqual(source.reads, 0, "the keychain was read even though the CLI answered")
         XCTAssertEqual(StubEndpoint.requestCount, 0, "the endpoint was called even though the CLI answered")
     }
@@ -187,11 +189,14 @@ final class ClaudeOAuthProviderTests: XCTestCase {
         let provider = makeProvider(source: CredentialSource(readable: true),
                                     cli: Self.cli { spawns.increment(); return Self.cliUsage })
 
-        _ = try await provider.fetchSnapshot()
-        _ = try await provider.fetchSnapshot()
-        _ = try await provider.fetchSnapshot()
+        let first = try await provider.fetchSnapshot()
+        let second = try await provider.fetchSnapshot()
+        let third = try await provider.fetchSnapshot()
 
         XCTAssertEqual(spawns.value, 1, "the CLI was spawned again inside its own interval")
+        XCTAssertEqual(second.usageMeasuredAt, first.usageMeasuredAt)
+        XCTAssertEqual(third.usageMeasuredAt, first.usageMeasuredAt,
+                       "cached CLI polls must retain the original observation time")
     }
 
     /// And it is asked again once the interval has passed, or the ring would
@@ -218,8 +223,9 @@ final class ClaudeOAuthProviderTests: XCTestCase {
     func testAFreshDesktopSnapshotNeedsNoKeychainAndNoRequest() async throws {
         StubEndpoint.reset([.init(status: 200, body: Self.usagePayload)])
         let source = CredentialSource(readable: true)
+        let beforeRead = Date()
         let provider = makeProvider(source: source, profile: desktopProfile(),
-                                    desktopCache: desktopCache(age: 0))
+                                    desktopCache: desktopCache(age: 60))
 
         let snapshot = try await provider.fetchSnapshot()
 
@@ -229,6 +235,11 @@ final class ClaudeOAuthProviderTests: XCTestCase {
         XCTAssertEqual(source.reads, 0, "the keychain was read even though the cache answered")
         XCTAssertEqual(StubEndpoint.requestCount, 0,
                        "the endpoint was called even though the cache answered")
+        XCTAssertLessThan(snapshot.usageMeasuredAt ?? .distantFuture,
+                          beforeRead.addingTimeInterval(-50),
+                          "poll time replaced the cache response timestamp")
+        XCTAssertEqual(snapshot.usageAccountFingerprint,
+                       UsageAccountFingerprint.sha256(ClaudeDesktopUsageCacheTests.organization))
     }
 
     /// Desktop is preferred over the CLI, not merely over the token: it is the

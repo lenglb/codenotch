@@ -118,9 +118,8 @@ struct CodexResetCredits: Equatable, Sendable {
     var nextExpiry: Date? { available.compactMap(\.expiresAt).min() }
 }
 
-/// The account's main rate-limit windows belong in the usage rings. Spark
-/// (`additional_rate_limits`) and code review belong on the hover card, not
-/// the rings.
+/// The account's main rate-limit windows belong in the usage rings. API-supplied
+/// additional limits and code review belong on the hover card, not the rings.
 enum CodexUsage {
     private struct Response: Decodable {
         let rate_limit: RateLimit?
@@ -295,18 +294,21 @@ enum CodexUsage {
                 windows.append(item)
             }
         }
-        // After the main pair so `windows.first` stays primary. Two Spark
-        // extras (plain "Spark" and "GPT-5.3-Codex-Spark") must not emit the
-        // same ids twice: the tooltip ForEach, the archive, and Phone Link
-        // all key windows by id, and a duplicate 5h row is what reads as a
-        // second session limit.
+        // After the main pair so `windows.first` stays primary. Additional
+        // limits are identified from vendor-supplied names rather than a
+        // hard-coded catalogue, so new products such as Fable appear without
+        // an app update. Stable ids are required by the tooltip, archive, and
+        // Phone Link; appendExtra also suppresses duplicate API entries.
         if includeExtras {
-            for extra in response.additional_rate_limits where isSpark(extra) {
+            for extra in response.additional_rate_limits {
+                guard let identity = additionalIdentity(extra) else { continue }
+                let spark = isSpark(extra)
+                let id = spark ? "spark" : "codex-additional-\(stableID(identity))"
                 appendExtra(
                     extra.rate_limit,
-                    primaryID: "spark",
-                    secondaryID: "spark-secondary",
-                    group: L10n.t("Spark"),
+                    primaryID: id,
+                    secondaryID: spark ? "spark-secondary" : "\(id)-secondary",
+                    group: spark ? L10n.t("Spark") : additionalGroup(extra, identity: identity),
                     now: now,
                     to: &windows
                 )
@@ -440,6 +442,38 @@ enum CodexUsage {
         [extra.limit_name, extra.metered_feature].contains { name in
             name?.range(of: "spark", options: .caseInsensitive) != nil
         }
+    }
+
+    /// Prefer the backend's machine-readable feature as identity. The display
+    /// name remains presentation only, so a vendor wording change does not
+    /// break archive continuity when `metered_feature` is available.
+    private static func additionalIdentity(_ extra: AdditionalRateLimit) -> String? {
+        [extra.metered_feature, extra.limit_name]
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .first { !$0.isEmpty }
+    }
+
+    private static func additionalGroup(_ extra: AdditionalRateLimit,
+                                        identity: String) -> String {
+        let supplied = extra.limit_name?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let readable = supplied.flatMap { $0.isEmpty ? nil : $0 }
+            ?? identity.replacingOccurrences(of: "_", with: " ")
+        return readable
+    }
+
+    /// A readable slug helps diagnostics; FNV-1a over the complete vendor key
+    /// prevents different punctuation or Unicode names collapsing to one id.
+    private static func stableID(_ identity: String) -> String {
+        let slug = identity.lowercased().unicodeScalars.map { scalar -> Character in
+            CharacterSet.alphanumerics.contains(scalar) ? Character(String(scalar)) : "-"
+        }
+        let readable = String(slug).split(separator: "-").joined(separator: "-")
+        var hash: UInt64 = 14_695_981_039_346_656_037
+        for byte in identity.utf8 {
+            hash ^= UInt64(byte)
+            hash &*= 1_099_511_628_211
+        }
+        return "\(readable.isEmpty ? "limit" : readable)-\(String(hash, radix: 16))"
     }
 
     /// The plan an account is on decides what its primary window actually is

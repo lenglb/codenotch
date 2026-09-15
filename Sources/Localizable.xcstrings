@@ -19291,6 +19291,237 @@
           }
         }
       }
+    },
+    "15 min steps": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "15-Min.-Schritte"
+          }
+        }
+      }
+    },
+    "Previous usage window": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vorheriges Zeitfenster"
+          }
+        }
+      }
+    },
+    "Next usage window": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nächstes Zeitfenster"
+          }
+        }
+      }
+    },
+    "Target": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Soll"
+          }
+        }
+      }
+    },
+    "Future target": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zukünftiger Sollwert"
+          }
+        }
+      }
+    },
+    "No reading at this time": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kein Messwert zu dieser Zeit"
+          }
+        }
+      }
+    },
+    "Reading": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Messung"
+          }
+        }
+      }
+    },
+    "History starts with observed readings": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Verlauf ab der ersten Messung"
+          }
+        }
+      }
+    },
+    "Even pace": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gleichmäßig"
+          }
+        }
+      }
+    },
+    "From now": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ab jetzt"
+          }
+        }
+      }
+    },
+    "Waiting for reset": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Warte auf Reset"
+          }
+        }
+      }
+    },
+    "Remaining budget": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Restbudget"
+          }
+        }
+      }
+    },
+    "Actual": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ist"
+          }
+        }
+      }
+    },
+    "Remaining budget, 15 minute steps": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Restbudget in 15-Minuten-Schritten"
+          }
+        }
+      }
+    },
+    "Previous 15 minutes": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "15 Minuten zurück"
+          }
+        }
+      }
+    },
+    "Next 15 minutes": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "15 Minuten vor"
+          }
+        }
+      }
+    },
+    "Now": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Jetzt"
+          }
+        }
+      }
+    },
+    "This custom build is updated from your fork.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Diese angepasste Version wird über deinen Fork aktualisiert."
+          }
+        }
+      }
+    },
+    "Show additional model limits and code review": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zusätzliche Modelllimits und Code-Review anzeigen"
+          }
+        }
+      }
+    },
+    "A trend needs a reported reset and window duration.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Für den Verlauf werden Reset-Zeit und Fensterdauer benötigt."
+          }
+        }
+      }
+    },
+    "Future usage is not yet known": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zukünftiger Verbrauch ist noch unbekannt"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

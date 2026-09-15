@@ -4,6 +4,7 @@ import Combine
 @MainActor
 final class NotchViewModel: ObservableObject {
     @Published var snapshots: [ProviderSnapshot] = []
+    @Published var historySamples: [UsageSample] = []
     /// Per runtime, so Ollama's relay switching off clears its own readings
     /// and nobody else's.
     private var performances: [String: [String: LocalModelPerformance]] = [:]
@@ -568,6 +569,7 @@ final class NotchViewModel: ObservableObject {
         guard screenSize != .zero else { return NotchLayout.defaultSessionCap }
         return NotchLayout.sessionsFitting(cardBudget: cardBudget(cellCount: cellCount),
                                            windowCount: NotchLayout.maxWindowCount,
+                                           hasUsageTrend: snapshots.contains { $0.hasUsageTrend },
                                            hasTokenUsage: hasTokenUsage,
                                            hasPlan: hasPlan,
                                            hasResetCredits: hasResetCredits)
@@ -583,6 +585,7 @@ final class NotchViewModel: ObservableObject {
                 sessionCap: sessionCap,
                 statusMessage: snapshot.statusMessage,
                 blockMessage: snapshot.block?.summary(now: now),
+                hasUsageTrend: snapshot.hasUsageTrend,
                 hasTokenUsage: snapshot.tokenUsage != nil,
                 hasPlan: snapshot.plan != nil,
                 hasResetCredits: snapshot.resetCredits != nil,

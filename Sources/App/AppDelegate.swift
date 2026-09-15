@@ -4,6 +4,7 @@ import SwiftUI
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var notchFleet: NotchFleet?
+    private var trendPreviewWindow: NSWindow?
     private var store: UsageStore?
     var phoneLinkServer: PhoneLinkServer?
     var phoneLinkServerStatus: PhoneLinkServerStatus?
@@ -101,7 +102,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // `CODENOTCH_DEMO=1` puts the design frame's three providers on screen
         // with its numbers, for screenshots and for eyeballing the layout.
-        if ProcessInfo.processInfo.environment["CODENOTCH_DEMO"] == "1" {
+        if ProcessInfo.processInfo.environment["CODENOTCH_DEMO"] == "trend" {
+            let now = Date()
+            let snapshots = Fixtures.trendSnapshots(now: now)
+            fleet.setSnapshots(snapshots)
+            let history = Fixtures.trendHistory(for: snapshots, now: now)
+            fleet.setHistorySamples(history)
+            let preview = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 580, height: 390),
+                                   styleMask: [.titled, .closable], backing: .buffered, defer: false)
+            preview.title = "Usage trend · Demo data"
+            preview.contentView = NSHostingView(rootView:
+                HStack(alignment: .top, spacing: 20) {
+                    ForEach(snapshots) { snapshot in
+                        TooltipCard(snapshot: snapshot, historySamples: history, now: now)
+                    }
+                }.padding(24).background(Color.black).environment(\.colorScheme, .dark)
+            )
+            preview.isReleasedWhenClosed = false
+            preview.center()
+            preview.makeKeyAndOrderFront(nil)
+            trendPreviewWindow = preview
+        } else if ProcessInfo.processInfo.environment["CODENOTCH_DEMO"] == "1" {
             fleet.setSnapshots(Fixtures.snapshots())
         } else {
             // DeepSeek's Platform usage page is a browser-session provider:
@@ -589,6 +610,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // of a preference as much as of the account, and the store keeps
             // what the vendor said. Paired with the preference so flipping the
             // toggle redraws at once, without a fetch.
+            store.$historySamples
+                .receive(on: RunLoop.main)
+                .sink { [weak fleet] samples in fleet?.setHistorySamples(samples) }
+                .store(in: &cancellables)
+
             store.$notchSnapshots
                 .combineLatest(preferences.$claudeDailyPaceRing)
                 .receive(on: RunLoop.main)

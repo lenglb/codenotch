@@ -365,7 +365,7 @@ private struct StatusRing: View {
 
 /// One metered window: label and reset copy on a line, a track bar, then the
 /// percentage burned.
-private struct LimitWindowRow: View {
+struct LimitWindowRow: View {
     let window: LimitWindow
     var inset: CGFloat = 0
     let fidelity: Fidelity
@@ -500,6 +500,7 @@ private struct ProviderTooltip: View {
     let now: Date
     let resetTimeFormat: ResetTimeFormat
     let showUsagePace: Bool
+    var historySamples: [UsageSample] = []
 
     /// Only worth saying when the numbers are not current. A remembered reading
     /// has to be dated, or it quietly passes itself off as live.
@@ -554,6 +555,10 @@ private struct ProviderTooltip: View {
                 RuntimeModelDetails(model: localModel, performance: snapshot.localPerformance,
                                     showsPerformance: snapshot.showsLocalPerformance,
                                     ledger: snapshot.localLedger, now: now)
+            } else if snapshot.hasUsageTrend {
+                UsageTrendSection(snapshot: snapshot, samples: historySamples, now: now,
+                                  resetTimeFormat: resetTimeFormat)
+                    .padding(.top, NotchLayout.headerToBlock)
             } else {
                 VStack(alignment: .leading, spacing: 0) {
                     ForEach(Array(groupedWindows.enumerated()), id: \.element.id) { groupIndex, group in
@@ -994,6 +999,7 @@ private struct SessionList: View {
 struct TooltipCard: View {
     let snapshot: ProviderSnapshot
     var activity: ActivitySummary?
+    var historySamples: [UsageSample] = []
     let now: Date
     /// Which way the card sits from the notch, which follows from the edge.
     var direction: NotchEdge.TooltipDirection = .leading
@@ -1028,6 +1034,7 @@ struct TooltipCard: View {
             sessionCap: sessionCap,
             statusMessage: snapshot.statusMessage,
             blockMessage: snapshot.block?.summary(now: now),
+            hasUsageTrend: snapshot.hasUsageTrend,
             hasTokenUsage: snapshot.tokenUsage != nil,
             hasPlan: snapshot.plan != nil,
             hasResetCredits: snapshot.resetCredits != nil,
@@ -1048,7 +1055,7 @@ struct TooltipCard: View {
             ZStack(alignment: .topLeading) {
                 VStack(alignment: .leading, spacing: 0) {
                     ProviderTooltip(activityNote: localActivityNote, snapshot: snapshot, now: now, resetTimeFormat: resetTimeFormat,
-                                    showUsagePace: showUsagePace)
+                                    showUsagePace: showUsagePace, historySamples: historySamples)
                     if let resetCredits = snapshot.resetCredits {
                         CodexResetCreditsSection(credits: resetCredits, now: now)
                     }

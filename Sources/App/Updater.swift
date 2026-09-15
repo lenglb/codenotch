@@ -23,6 +23,7 @@ final class Updater: NSObject, ObservableObject, SPUUpdaterDelegate {
     /// place a user goes to think about updates say what actually happened.
     enum Outcome: Equatable {
         case idle
+        case forkBuild
         case checking
         case upToDate(Date)
         case found(String)
@@ -32,6 +33,7 @@ final class Updater: NSObject, ObservableObject, SPUUpdaterDelegate {
         var message: String? {
             switch self {
             case .idle:          return nil
+            case .forkBuild:     return L10n.t("This custom build is updated from your fork.")
             case .checking:      return L10n.t("Checking…")
             case .upToDate:      return L10n.t("Codenotch is up to date.")
             case .found(let v):  return L10n.t("Version \(v) is available and will install shortly.")
@@ -46,6 +48,8 @@ final class Updater: NSObject, ObservableObject, SPUUpdaterDelegate {
 
     @Published private(set) var outcome: Outcome = .idle
 
+    private var isForkBuild: Bool { Bundle.main.object(forInfoDictionaryKey: "CodenotchForkBuild") as? Bool == true }
+
     private lazy var controller = SPUStandardUpdaterController(
         startingUpdater: true, updaterDelegate: self, userDriverDelegate: nil
     )
@@ -53,8 +57,9 @@ final class Updater: NSObject, ObservableObject, SPUUpdaterDelegate {
     /// Mirrors the preference, so switching it off really does stop the checks
     /// rather than only hiding them.
     var automatic: Bool {
-        get { controller.updater.automaticallyChecksForUpdates }
+        get { !isForkBuild && controller.updater.automaticallyChecksForUpdates }
         set {
+            guard !isForkBuild else { return }
             controller.updater.automaticallyChecksForUpdates = newValue
             controller.updater.automaticallyDownloadsUpdates = newValue
         }
@@ -64,16 +69,20 @@ final class Updater: NSObject, ObservableObject, SPUUpdaterDelegate {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?"
     }
 
-    var lastChecked: Date? { controller.updater.lastUpdateCheckDate }
+    var lastChecked: Date? { isForkBuild ? nil : controller.updater.lastUpdateCheckDate }
 
     /// Starts the scheduled checks. Deliberately not in `init`: the controller
     /// is lazy so that `self` exists before it is handed over as the delegate.
-    func start() { _ = controller }
+    func start() {
+        guard !isForkBuild else { outcome = .forkBuild; return }
+        _ = controller
+    }
 
     /// The manual path, for someone who does not want to wait for the schedule.
     /// This one *does* show UI — it was asked for, so silence would read as a
     /// broken button.
     func checkNow() {
+        guard !isForkBuild else { outcome = .forkBuild; return }
         outcome = .checking
         controller.updater.checkForUpdates()
     }

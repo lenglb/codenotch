@@ -23,6 +23,7 @@ struct UsageArchive {
         /// continue to open and show their last quota reading.
         let tokenUsage: CodexTokenUsage?
         let usageDetail: ProviderUsageDetail?
+        let usageAccountFingerprint: String?
     }
 
     private let defaults: UserDefaults
@@ -74,10 +75,10 @@ struct UsageArchive {
 
         var result: [String: (snapshot: ProviderSnapshot, fetchedAt: Date)] = [:]
         for entry in entries {
-            // Spark and code-review are live windows. Older Codex readings also
-            // carried rollout quotas the provider no longer displays. Strip
-            // those leftovers rather than discarding a Spark snapshot — and
-            // do it for every Codex profile, not only the default.
+            // Live fixed windows and namespaced API-supplied additional limits
+            // survive relaunches. Older Codex readings also carried rollout
+            // quotas the provider no longer displays; those unnamespaced ids
+            // remain excluded for every Codex profile.
             let windows: [LimitWindow]
             if CodexProfile.isCodex(providerID: entry.id) {
                 windows = entry.windows.filter { Self.isLiveCodexWindow($0.id) }
@@ -85,7 +86,7 @@ struct UsageArchive {
             } else {
                 windows = entry.windows
             }
-            let snapshot = ProviderSnapshot(
+            var snapshot = ProviderSnapshot(
                 id: entry.id,
                 displayName: entry.displayName,
                 glyph: entry.id == "devin" && entry.glyph == .third ? .devin : entry.glyph,
@@ -97,6 +98,8 @@ struct UsageArchive {
                 tokenUsage: entry.tokenUsage,
                 usageDetail: entry.usageDetail
             )
+            snapshot.usageMeasuredAt = entry.fetchedAt
+            snapshot.usageAccountFingerprint = entry.usageAccountFingerprint
             result[entry.id] = (snapshot, entry.fetchedAt)
         }
         return result
@@ -107,6 +110,7 @@ struct UsageArchive {
         id == "primary" || id == "secondary"
             || id.hasPrefix("spark")
             || id.hasPrefix("code-review")
+            || id.hasPrefix("codex-additional-")
     }
 
     func save(_ readings: [String: (snapshot: ProviderSnapshot, fetchedAt: Date)]) {
@@ -121,7 +125,8 @@ struct UsageArchive {
                 headlineID: $0.snapshot.headlineID,
                 weeklyID: $0.snapshot.weeklyID,
                 tokenUsage: $0.snapshot.tokenUsage,
-                usageDetail: $0.snapshot.usageDetail
+                usageDetail: $0.snapshot.usageDetail,
+                usageAccountFingerprint: $0.snapshot.usageAccountFingerprint
             )
         }
         guard let data = try? JSONEncoder().encode(entries) else { return }

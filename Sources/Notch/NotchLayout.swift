@@ -137,6 +137,7 @@ enum NotchLayout {
     static let cardWidth     = Design.px(600)
     static let cardCorner    = Design.px(49.5)
     static let cardPadding   = Design.px(32)
+    static let usageTrendHeight = Design.px(630)
     static let tailLength    = Design.px(75)
     static let tailHeight    = Design.px(87)
     static let tailGap       = Design.px(28)    // tail tip -> notch body edge
@@ -337,6 +338,7 @@ enum NotchLayout {
                            sessionCap: Int = defaultSessionCap,
                            statusMessage: String? = nil,
                            blockMessage: String? = nil,
+                           hasUsageTrend: Bool = false,
                            hasTokenUsage: Bool = false,
                            hasPlan: Bool = false,
                            hasResetCredits: Bool = false,
@@ -361,6 +363,8 @@ enum NotchLayout {
             let rows: CGFloat = (showsLocalPerformance ? 7 : 4) + CGFloat(max(0, localLedgerRows))
             height += headerToBlock + modelNameHeight(localModelName)
                 + blockSpacing + rows * cardBodyLineHeight + (rows - 1) * sessionRowGap
+        } else if hasUsageTrend {
+            height += headerToBlock + usageTrendHeight
         } else if windowCount > 0 {
             let moneyCount = min(max(0, moneyWindowCount), windowCount)
             let fullCount = windowCount - compactRowCount - moneyCount
@@ -483,6 +487,7 @@ enum NotchLayout {
     /// costs nothing.
     static func sessionsFitting(cardBudget: CGFloat, windowCount: Int,
                                 groupCount: Int = 2,
+                                hasUsageTrend: Bool = false,
                                 hasTokenUsage: Bool = false,
                                 hasPlan: Bool = false,
                                 hasResetCredits: Bool = false) -> Int {
@@ -493,6 +498,7 @@ enum NotchLayout {
             // bottom of the card.
             let height = cardHeight(windowCount: windowCount, groupCount: groupCount,
                                     sessionCount: n + 1, sessionCap: n,
+                                    hasUsageTrend: hasUsageTrend,
                                     hasTokenUsage: hasTokenUsage, hasPlan: hasPlan,
                                     hasResetCredits: hasResetCredits)
             guard height <= cardBudget else { break }

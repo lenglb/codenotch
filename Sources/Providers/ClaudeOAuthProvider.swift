@@ -151,15 +151,16 @@ actor ClaudeOAuthProvider: UsageProvider {
         // Ahead of both the CLI and the back-off check. This is the cheapest
         // source and the only one that can never interrupt anyone: it reads a
         // file Claude Desktop has already written.
-        if let windows = await desktopWindows() {
-            return snapshot(windows: windows)
+        if let reading = await desktopWindows() {
+            return snapshot(windows: reading.windows, usageMeasuredAt: reading.measuredAt)
         }
         // Ahead of the back-off check on purpose. That deadline is the
         // endpoint's, and the CLI does not share the endpoint's rate limit —
         // there is no reason for a 429 on one to darken a ring the other can
         // still fill.
-        if let windows = await cliWindows() {
-            return snapshot(windows: windows, plan: lastCLIPlan)
+        if let reading = await cliWindows() {
+            return snapshot(windows: reading.windows, plan: lastCLIPlan,
+                            usageMeasuredAt: reading.measuredAt)
         }
         if Self.shouldHoldOff(until: retryNoEarlierThan, slack: backoffSlack),
            let retryNoEarlierThan {
@@ -200,8 +201,10 @@ actor ClaudeOAuthProvider: UsageProvider {
     /// The snapshot shape every source produces. One place, so a window order or
     /// a headline changed for the endpoint cannot quietly differ from the CLI's or
     /// Desktop's — the three are the same reading taken from three places.
-    private func snapshot(windows: [LimitWindow], plan: String? = nil) -> ProviderSnapshot {
-        ProviderSnapshot(
+    private func snapshot(windows: [LimitWindow], plan: String? = nil,
+                          usageMeasuredAt: Date? = nil) -> ProviderSnapshot {
+        let fingerprint = profile.organizationID().map(UsageAccountFingerprint.sha256)
+        return ProviderSnapshot(
             id: id,
             displayName: displayName,
             glyph: glyph,
@@ -212,7 +215,9 @@ actor ClaudeOAuthProvider: UsageProvider {
             // #102's second ring. The helper is the only place a Claude
             // snapshot is built now, so this is the only place it can go.
             weeklyID: "weekly_all",
-            plan: plan?.nonEmptyPlan
+            plan: plan?.nonEmptyPlan,
+            usageMeasuredAt: usageMeasuredAt,
+            usageAccountFingerprint: fingerprint
         )
     }
 
@@ -229,7 +234,7 @@ actor ClaudeOAuthProvider: UsageProvider {
     /// good reading to `UsageStore`, which already re-shows it with the age it
     /// actually has and dims it — where returning it here would present numbers
     /// from an hour ago as a live `.ok`.
-    private func desktopWindows() async -> [LimitWindow]? {
+    private func desktopWindows() async -> (windows: [LimitWindow], measuredAt: Date)? {
         guard let desktopCache else { return nil }
         let now = Date()
         // A recent miss means the next read would be a full scan for something
@@ -273,7 +278,7 @@ actor ClaudeOAuthProvider: UsageProvider {
         }
         lastDesktopMiss = nil
         Log.usage.debug("\(self.id, privacy: .public): read \(reading.windows.count) windows from the claude desktop cache entry \(reading.entry.lastPathComponent, privacy: .public)")
-        return reading.windows
+        return (reading.windows, reading.capturedAt)
     }
 
     /// Whether any window in a reading names a reset time that has already
@@ -293,7 +298,7 @@ actor ClaudeOAuthProvider: UsageProvider {
     /// endpoint instead, not a reason to fail the refresh. The endpoint's
     /// errors are also the ones `UsageStore` knows how to word, and a status
     /// invented here would be a second vocabulary saying the same things.
-    private func cliWindows() async -> [LimitWindow]? {
+    private func cliWindows() async -> (windows: [LimitWindow], measuredAt: Date)? {
         guard let cli else { return nil }
         let now = Date()
 
@@ -308,7 +313,7 @@ actor ClaudeOAuthProvider: UsageProvider {
         if let last = lastCLIWindows,
            now.timeIntervalSince(last.at) < cliRefreshInterval,
            !Self.hasExpiredWindow(last.windows, at: now) {
-            return last.windows
+            return (last.windows, last.at)
         }
         if let lastCLIAttempt, now.timeIntervalSince(lastCLIAttempt) < cliRefreshInterval {
             return nil
@@ -317,10 +322,11 @@ actor ClaudeOAuthProvider: UsageProvider {
 
         do {
             let reading = try await cli.readWithPlan(profile: profile, now: now)
-            lastCLIWindows = (reading.windows, now)
+            let measuredAt = Date()
+            lastCLIWindows = (reading.windows, measuredAt)
             lastCLIPlan = reading.plan
             Log.usage.debug("\(self.id, privacy: .public): read \(reading.windows.count) windows from claude /usage")
-            return reading.windows
+            return (reading.windows, measuredAt)
         } catch {
             Log.usage.debug("\(self.id, privacy: .public): claude /usage did not answer, falling back to the token")
             return nil
@@ -337,6 +343,7 @@ actor ClaudeOAuthProvider: UsageProvider {
 
         Log.usage.debug("GET /api/oauth/usage")
         let (data, response) = try await session.data(for: request)
+        let usageMeasuredAt = Date()
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
         Log.usage.debug("usage endpoint answered \(status)")
 
@@ -365,7 +372,8 @@ actor ClaudeOAuthProvider: UsageProvider {
         }
 
         let payload = try UsageResponse.decoder.decode(UsageResponse.self, from: data)
-        return snapshot(windows: payload.limitWindows(), plan: credentials?.subscriptionType)
+        return snapshot(windows: payload.limitWindows(), plan: credentials?.subscriptionType,
+                        usageMeasuredAt: usageMeasuredAt)
     }
 
     private func currentToken() throws -> String {

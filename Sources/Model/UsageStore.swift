@@ -29,6 +29,9 @@ final class UsageStore: ObservableObject {
     /// to this separately from usage snapshots so it can re-read account
     /// summaries without re-reading every credential on every polling pass.
     @Published private(set) var providerAccountRevision = 0
+    /// Provider-confirmed quota points for pacing charts. Unlike `lastGood`,
+    /// these are never repeated when a fetch fails or becomes stale.
+    @Published private(set) var historySamples: [UsageSample] = []
 
     private let providers: [UsageProvider]
 
@@ -50,6 +53,8 @@ final class UsageStore: ObservableObject {
             // remembered forever and rebuilt from the archive at the next
             // launch, ring and all.
             for id in disconnected { lastGood.removeValue(forKey: id) }
+            for id in disconnected { history.forget(providerID: id) }
+            historySamples = history.samples
             archive.save(lastGood)
             for provider in providers where oldValue.contains(provider.id) && !disconnected.contains(provider.id) {
                 publish(Self.placeholder(provider))
@@ -109,6 +114,7 @@ final class UsageStore: ObservableObject {
     private let pollingNow: () -> Date
 
     private let archive: UsageArchive
+    private var history: UsageHistory
     private var lastGood: [String: (snapshot: ProviderSnapshot, fetchedAt: Date)] = [:]
     private var timer: Timer?
     private var localTimer: Timer?
@@ -153,6 +159,7 @@ final class UsageStore: ObservableObject {
         // one tick rather than the rest of the day.
         refreshDeadline: TimeInterval = 60,
         archive: UsageArchive = UsageArchive(),
+        history: UsageHistory = .applicationDefault(),
         disconnected: Set<String> = [],
         order: [String] = [],
         pollingNow: @escaping () -> Date = Date.init
@@ -165,6 +172,8 @@ final class UsageStore: ObservableObject {
         self.staleAfter = staleAfter
         self.refreshDeadline = refreshDeadline
         self.archive = archive
+        self.history = history
+        historySamples = history.samples
 
         // Open on what we knew last time rather than on an empty ring; the
         // first fetch will either confirm it or replace it.
@@ -184,8 +193,10 @@ final class UsageStore: ObservableObject {
         // preference binding delivers a moment later is usually identical to
         // the one passed in here. A provider switched off in a previous session
         // would then keep its archived reading indefinitely.
-        if lastGood.keys.contains(where: disconnected.contains) {
+        if !disconnected.isEmpty {
             for id in disconnected { lastGood.removeValue(forKey: id) }
+            for id in disconnected { self.history.forget(providerID: id) }
+            historySamples = self.history.samples
             archive.save(lastGood)
         }
         // Filtered here, not only in `didSet`. The store is built before the
@@ -515,6 +526,8 @@ final class UsageStore: ObservableObject {
         snapshots.removeAll { $0.id == providerID }
         lastGood.removeValue(forKey: providerID)
         archive.forget(providerID)
+        history.forget(providerID: providerID)
+        historySamples = history.samples
 
         Task { await provider.signOut() }
     }
@@ -583,6 +596,11 @@ final class UsageStore: ObservableObject {
     func openAccountSource(providerID: String, switching: Bool = false) -> Bool {
         guard let provider = providers.first(where: { $0.id == providerID }) else { return false }
 
+        if switching {
+            history.forget(providerID: providerID)
+            historySamples = history.samples
+        }
+
         switch provider.signInRoute {
         case .modal:
             if switching {
@@ -626,8 +644,12 @@ final class UsageStore: ObservableObject {
             // Model residency becomes untrue as soon as a server stops. It must
             // never use quota's last-good cache or survive an app relaunch.
             if provider.kind == .usage {
-                lastGood[provider.id] = (fresh, Date())
+                let fetchedAt = fresh.usageMeasuredAt ?? pollingNow()
+                lastGood[provider.id] = (fresh, fetchedAt)
                 archive.save(lastGood)
+                history.record(snapshot: fresh, at: fetchedAt,
+                               accountFingerprint: fresh.usageAccountFingerprint)
+                historySamples = history.samples
             }
             refusedAccess.remove(provider.id)
             // A reading that actually came back is proof the credential works,
@@ -684,6 +706,8 @@ final class UsageStore: ObservableObject {
         if Self.supersedesHistory(status) {
             lastGood[provider.id] = nil
             archive.save(lastGood)
+            history.forget(providerID: provider.id)
+            historySamples = history.samples
             var empty = Self.placeholder(provider)
             empty.status = status
             return empty

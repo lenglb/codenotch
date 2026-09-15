@@ -160,8 +160,8 @@ final class CodexUsageTests: XCTestCase {
         XCTAssertEqual(result.map(\.usedFraction), [0.40, 0.70])
     }
 
-    /// An additional limit that is not Spark is not a window we show.
-    func testAnUnknownAdditionalLimitIsIgnored() throws {
+    /// New vendor-defined limits are shown without requiring a hard-coded name.
+    func testANewAdditionalLimitIsExposedWithAStableVendorLabel() throws {
         let result = try windows("""
         {"rate_limit":{
           "primary_window":{"used_percent":25,"limit_window_seconds":18000},
@@ -169,8 +169,12 @@ final class CodexUsageTests: XCTestCase {
          "additional_rate_limits":[{"limit_name":"Credits","rate_limit":{
           "primary_window":{"used_percent":50,"limit_window_seconds":86400}}}]}
         """)
-        XCTAssertEqual(result.map(\.id), ["primary", "secondary"])
-        XCTAssertEqual(result.map(\.usedFraction), [0.25, 0.10])
+        XCTAssertEqual(result.count, 3)
+        XCTAssertEqual(result.prefix(2).map(\.id), ["primary", "secondary"])
+        XCTAssertTrue(result[2].id.hasPrefix("codex-additional-credits-"))
+        XCTAssertEqual(result[2].group, "Credits")
+        XCTAssertEqual(result[2].label, "1d limit")
+        XCTAssertEqual(result.map(\.usedFraction), [0.25, 0.10, 0.50])
     }
 
     /// A null `used_percent` on Spark must not fail a fetch that already has
@@ -260,17 +264,43 @@ final class CodexUsageTests: XCTestCase {
         }
     }
 
-    /// Credits and `codex_other` are real extras on some accounts. Showing
-    /// them as windows made the hover card grow by a row that has no home.
-    func testUnknownExtrasAloneLeaveNothingMetered() {
-        XCTAssertThrowsError(try windows("""
+    func testAdditionalLimitAloneIsStillMetered() throws {
+        let result = try windows("""
         {"additional_rate_limits":[{"limit_name":"Credits","metered_feature":"codex_other",
           "rate_limit":{"primary_window":{"used_percent":50,"limit_window_seconds":86400}}}]}
-        """)) { error in
-            guard case UsageProviderError.nothingMetered = error else {
-                return XCTFail("expected nothingMetered, got \(error)")
-            }
-        }
+        """)
+        XCTAssertEqual(result.count, 1)
+        XCTAssertTrue(result[0].id.hasPrefix("codex-additional-codex-other-"))
+        XCTAssertEqual(result[0].group, "Credits")
+        XCTAssertEqual(result[0].usedFraction, 0.5)
+    }
+
+    func testFableWeeklyUsesVendorDataAndDoesNotChangeTheHeadlineOrder() throws {
+        let result = try windows("""
+        {"rate_limit":{"primary_window":{"used_percent":25,"limit_window_seconds":18000}},
+         "additional_rate_limits":[{"limit_name":"Fable Weekly","metered_feature":"fable_weekly",
+          "rate_limit":{"primary_window":{"used_percent":61,"limit_window_seconds":604800}}}]}
+        """)
+        XCTAssertEqual(result.first?.id, "primary")
+        XCTAssertEqual(result.last?.group, "Fable Weekly")
+        XCTAssertEqual(result.last?.label, "Weekly limit")
+        XCTAssertTrue(result.last?.id.hasPrefix("codex-additional-fable-weekly-") == true)
+    }
+
+    func testMalformedAndDuplicateAdditionalLimitsAreSafelySkipped() throws {
+        let result = try windows("""
+        {"rate_limit":{"primary_window":{"used_percent":5,"limit_window_seconds":18000}},
+         "additional_rate_limits":[
+          {"limit_name":"  ","rate_limit":{"primary_window":{"used_percent":40,"limit_window_seconds":604800}}},
+          {"limit_name":"Fable","metered_feature":"fable_weekly","rate_limit":{"primary_window":{"used_percent":20,"limit_window_seconds":604800}}},
+          {"limit_name":"Fable renamed","metered_feature":"fable_weekly","rate_limit":{"primary_window":{"used_percent":90,"limit_window_seconds":604800}}},
+          {"limit_name":"Broken","rate_limit":{"primary_window":{"used_percent":null,"limit_window_seconds":604800}}}
+         ]}
+        """)
+        XCTAssertEqual(result.count, 2)
+        XCTAssertEqual(Set(result.map(\.id)).count, result.count)
+        XCTAssertEqual(result.last?.group, "Fable")
+        XCTAssertEqual(result.last?.usedFraction, 0.2)
     }
 
     /// Code review with no main pair is still a reading, same as Spark-only.
