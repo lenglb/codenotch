@@ -54,11 +54,11 @@ extension Fixtures {
             ProviderSnapshot(id: id, displayName: id == "codex" ? "Codex · Demo" : "Claude · Demo",
                              glyph: id == "codex" ? .openai : .claude,
                              fidelity: .manual, status: .ok, windows: [
-                                LimitWindow(id: "primary", label: L10n.t("5h limit"), usedFraction: 0.65,
+                                LimitWindow(id: id == "codex" ? "primary" : "session", label: L10n.t("5h limit"), usedFraction: 0.65,
                                             resetsAt: now.addingTimeInterval(9000), duration: 18000),
-                                LimitWindow(id: "secondary", label: L10n.t("Weekly limit"), usedFraction: 0.32,
+                                LimitWindow(id: id == "codex" ? "secondary" : "weekly_all", label: L10n.t("Weekly limit"), usedFraction: 0.32,
                                             resetsAt: now.addingTimeInterval(302400), duration: 604800),
-                                LimitWindow(id: "fable-demo-secondary", group: "Fable", label: L10n.t("Weekly limit"),
+                                LimitWindow(id: "weekly_fable", group: "Fable", label: L10n.t("Weekly limit"),
                                             usedFraction: 0.58, resetsAt: now.addingTimeInterval(302400), duration: 604800)
                              ], headlineID: "primary", weeklyID: "secondary")
         }

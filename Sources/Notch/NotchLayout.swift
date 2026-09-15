@@ -137,7 +137,7 @@ enum NotchLayout {
     static let cardWidth     = Design.px(600)
     static let cardCorner    = Design.px(49.5)
     static let cardPadding   = Design.px(32)
-    static let usageTrendHeight = Design.px(500)
+    static let usageTrendHeight = Design.px(540)
     static let trendCardMaximumHeight: CGFloat = 720
     static var collapsedSessionsHeight: CGFloat { 2 * blockSpacing + hairline + cardBodyLineHeight }
     static func usageTrendsHeight(count: Int) -> CGFloat {

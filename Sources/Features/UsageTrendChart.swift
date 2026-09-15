@@ -4,25 +4,35 @@ extension ProviderSnapshot {
     /// Only vendor quota windows with a known cycle can support an even pace.
     var trendWindows: [LimitWindow] {
         guard CodexProfile.isCodex(providerID: id) || ClaudeProfile.isClaude(providerID: id) else { return [] }
-        return windows.filter {
+        let available = windows.filter {
             guard let used = $0.usedFraction, used.isFinite, used >= 0,
                   let duration = $0.duration, duration.isFinite, duration > 0, duration <= UsageHistory.retention,
                   let reset = $0.resetsAt, reset.timeIntervalSince1970.isFinite else { return false }
             return true
         }
+        if CodexProfile.isCodex(providerID: id) {
+            // The main weekly quota may be primary (weekly-only accounts) or
+            // secondary. Never substitute an unrelated model quota.
+            let weekly = available.filter {
+                ["primary", "secondary"].contains($0.id) && abs(($0.duration ?? 0) - 604800) < 1
+            }
+            return (weekly.first { $0.id == weeklyID } ?? weekly.first).map { [$0] } ?? []
+        }
+        func rank(_ window: LimitWindow) -> Int {
+            if window.id == "weekly_fable" || window.label.lowercased().contains("fable")
+                || window.group?.lowercased().contains("fable") == true { return 0 }
+            if window.id == "session" || window.duration == 18000 { return 1 }
+            if window.id == "weekly_all" { return 2 }
+            return 3
+        }
+        return available.enumerated().sorted {
+            let left = rank($0.element), right = rank($1.element)
+            return left == right ? $0.offset < $1.offset : left < right
+        }.map(\.element)
     }
 
     var hasUsageTrend: Bool { !trendWindows.isEmpty }
 
-    /// The ring may lead with DailyPace, a synthetic weekly-budget ratio with
-    /// no independent cycle. Saved selections must use the same eligibility
-    /// rules as navigation so they cannot reopen an empty chart.
-    func selectedTrendWindow(id: String) -> LimitWindow? {
-        let available = trendWindows
-        return available.first { $0.id == id }
-            ?? available.first { $0.id == headlineID }
-            ?? available.first
-    }
 }
 
 /// Every real quota cycle is expanded together. Each plot owns its cursor so
@@ -87,7 +97,10 @@ private struct UsageWindowChart: View {
         }
         .font(Typography.cardBody)
         .frame(height: NotchLayout.usageTrendHeight, alignment: .top)
-        .onChange(of: window.resetsAt) { _, _ in inspectedDate = nil }
+        .onChange(of: window.resetsAt) { old, new in
+            if let old, let new, abs(new.timeIntervalSince(old)) <= UsageHistory.resetTolerance { return }
+            inspectedDate = nil
+        }
     }
 
     private func readout(trend: UsageTrend) -> some View {
@@ -99,7 +112,9 @@ private struct UsageWindowChart: View {
             $0.measuredAt <= date && date.timeIntervalSince($0.measuredAt) <= UsageHistory.resolution
         } : nil
         let reference = date
-        let delta = sample.map { $0.remainingFraction - trend.idealRemaining(at: date) }
+        let prediction = date > now ? trend.forecast(now: now)?.remaining(at: date) : nil
+        let remaining = sample?.remainingFraction ?? prediction
+        let delta = remaining.map { $0 - trend.idealRemaining(at: date) }
         return VStack(alignment: .leading, spacing: Design.px(8)) {
             HStack {
                 Text(reference.formatted(.dateTime.weekday(.abbreviated).hour().minute()))
@@ -109,6 +124,7 @@ private struct UsageWindowChart: View {
             .foregroundStyle(Palette.textSecondary)
             HStack {
                 Text(sample.map { L10n.t("Remaining") + " " + percent($0.remainingFraction) }
+                     ?? prediction.map { L10n.t("Forecast") + " " + percent($0) }
                      ?? (date > now ? L10n.t("Future target") : L10n.t("No reading at this time")))
                     .foregroundStyle(Palette.textPrimary)
                 Spacer(minLength: 0)
@@ -118,7 +134,8 @@ private struct UsageWindowChart: View {
                 }
             }
             Text(sample.map { L10n.t("Reading") + " " + $0.measuredAt.formatted(.dateTime.hour().minute()) }
-                 ?? (date > now ? L10n.t("Future usage is not yet known") : L10n.t("History starts with observed readings")))
+                 ?? (prediction != nil ? L10n.t("Estimate at the same workload")
+                     : date > now ? L10n.t("Future usage is not yet known") : L10n.t("History starts with observed readings")))
                 .foregroundStyle(Palette.textSecondary)
         }
         .lineLimit(1)
@@ -133,21 +150,57 @@ private struct UsageWindowChart: View {
         let current = latest.flatMap { now.timeIntervalSince($0.measuredAt) <= UsageHistory.resolution ? $0 : nil }
         let even = UsageHistory.resolution / trend.cycle.duration
         let available = current.map { $0.remainingFraction * min(UsageHistory.resolution / max(remainingTime, 1), 1) }
+        let forecast = trend.forecast(now: now)
+        let evenText = String(format: "%.2f%%", even * 100)
+        let availableText: String = remainingTime > 0
+            ? available.map { String(format: "%.2f%%", $0 * 100) } ?? "—" : "—"
+        let paceText = L10n.t("Target") + " " + evenText + " · " + L10n.t("From now") + " " + availableText
+        let basisText: String
+        let lastsText: String
+        let runsOut: Bool
+        if let forecast {
+            basisText = forecast.basis == .recent
+                ? L10n.t("Forecast") + ": " + L10n.t("last") + " " + interval(forecast.basisDuration)
+                : L10n.t("Forecast: average since window start")
+            runsOut = forecast.exhaustionDate.map { $0 < trend.end } ?? false
+            if let exhausted = forecast.exhaustionDate, exhausted <= now {
+                lastsText = L10n.t("Exhausted")
+            } else if let exhausted = forecast.exhaustionDate, exhausted < trend.end {
+                lastsText = "≈ " + interval(exhausted.timeIntervalSince(now))
+            } else {
+                lastsText = L10n.t("Until reset") + " · " + interval(max(0, remainingTime))
+            }
+        } else {
+            basisText = L10n.t("Forecast needs a fresh reading")
+            lastsText = "—"
+            runsOut = false
+        }
         return VStack(alignment: .leading, spacing: Design.px(8)) {
             HStack {
-                Text(L10n.t("Even pace"))
+                Text(L10n.t("Per 15 min"))
                 Spacer(minLength: 0)
-                Text(String(format: "%.2f%% / 15 min", even * 100))
+                Text(paceText)
             }
             HStack {
-                Text(remainingTime > 0 ? L10n.t("From now") : L10n.t("Waiting for reset"))
+                Text(L10n.t("Lasts for"))
                 Spacer(minLength: 0)
-                Text(remainingTime > 0 ? available.map { String(format: "%.2f%% / 15 min", $0 * 100) } ?? "—" : "—")
+                Text(lastsText).foregroundStyle(runsOut ? Palette.critical : accent)
             }
+            Text(basisText)
+                .help(L10n.t("Estimate assuming the same workload. Recent readings are preferred; otherwise the average since the window began is used."))
         }
         .foregroundStyle(Palette.textSecondary)
         .lineLimit(1)
+        .minimumScaleFactor(0.8)
         .monospacedDigit()
+    }
+
+    private func interval(_ seconds: TimeInterval) -> String {
+        let formatter = DateComponentsFormatter()
+        formatter.allowedUnits = seconds >= 86400 ? [.day, .hour] : seconds >= 3600 ? [.hour, .minute] : [.minute]
+        formatter.unitsStyle = .abbreviated
+        formatter.maximumUnitCount = 2
+        return formatter.string(from: max(60, seconds)) ?? "—"
     }
 
     private func percent(_ fraction: Double) -> String { String(format: "%.1f%%", fraction * 100) }
@@ -163,13 +216,16 @@ struct UsageTrendPlot: View {
 
     var body: some View {
         VStack(spacing: Design.px(10)) {
-            HStack(spacing: Design.px(16)) {
-                Text(L10n.t("Remaining budget"))
+            HStack(spacing: Design.px(8)) {
+                Text(L10n.t("Budget"))
                     .foregroundStyle(Palette.textPrimary)
                 Spacer(minLength: 0)
                 Text("− " + L10n.t("Actual")).foregroundStyle(accent)
                 Text("┄ " + L10n.t("Target")).foregroundStyle(Palette.textSecondary)
+                Text("┄ " + L10n.t("Forecast")).foregroundStyle(accent)
             }
+            .lineLimit(1)
+            .minimumScaleFactor(0.8)
             GeometryReader { proxy in
                 let size = proxy.size
                 ZStack {
@@ -193,6 +249,14 @@ struct UsageTrendPlot: View {
                             }
                         }
                     }.stroke(accent, style: StrokeStyle(lineWidth: Design.px(4), lineCap: .round, lineJoin: .round))
+                    if let forecast = trend.forecast(now: now) {
+                        Path { path in
+                            let until = min(trend.end, forecast.exhaustionDate ?? trend.end)
+                            path.move(to: point(forecast.origin.measuredAt, forecast.origin.remainingFraction, size))
+                            path.addLine(to: point(until, forecast.remaining(at: until), size))
+                        }
+                        .stroke(accent, style: StrokeStyle(lineWidth: Design.px(3), dash: [Design.px(9), Design.px(7)]))
+                    }
                     Path { path in
                         // Single measurements must remain visible on first launch.
                         for run in trend.observed {

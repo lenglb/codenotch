@@ -19562,6 +19562,116 @@
           }
         }
       }
+    },
+    "Per 15 min": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Je 15 Min."
+          }
+        }
+      }
+    },
+    "Lasts for": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reicht noch"
+          }
+        }
+      }
+    },
+    "Until reset": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bis Reset"
+          }
+        }
+      }
+    },
+    "Forecast": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Prognose"
+          }
+        }
+      }
+    },
+    "last": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "letzte"
+          }
+        }
+      }
+    },
+    "Forecast: average since window start": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Prognose: Ø seit Fensterstart"
+          }
+        }
+      }
+    },
+    "Forecast needs a fresh reading": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Prognose benötigt aktuelle Messung"
+          }
+        }
+      }
+    },
+    "Estimate at the same workload": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Schätzung bei gleichem Arbeitspensum"
+          }
+        }
+      }
+    },
+    "Estimate assuming the same workload. Recent readings are preferred; otherwise the average since the window began is used.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Schätzung bei gleichem Arbeitspensum. Bevorzugt werden aktuelle Messwerte, sonst der Durchschnitt seit Fensterbeginn."
+          }
+        }
+      }
+    },
+    "Exhausted": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aufgebraucht"
+          }
+        }
+      }
+    },
+    "Budget": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Restbudget"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

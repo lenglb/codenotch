@@ -31,6 +31,7 @@ struct UsageSample: Codable, Equatable, Identifiable, Sendable {
 /// quantities needed for a trend, separate from the last-good UI archive.
 struct UsageHistory {
     static let resolution: TimeInterval = 15 * 60
+    static let resetTolerance: TimeInterval = 5
     static let retention: TimeInterval = 120 * 24 * 60 * 60
     static let maximumSamples = 12_000
 
@@ -74,11 +75,17 @@ struct UsageHistory {
                   measuredAt >= resetsAt.addingTimeInterval(-duration)
             else { continue }
 
-            let cycle = UsageSample.CycleIdentity(
+            let reportedCycle = UsageSample.CycleIdentity(
                 providerID: snapshot.id, windowID: window.id,
                 resetsAt: resetsAt, duration: duration,
                 accountFingerprint: accountFingerprint
             )
+            // Some providers derive resetsAt from a rounded countdown. Reuse
+            // the persisted identity for tiny clock drift without joining real
+            // cycles or unidentified accounts.
+            let cycle = samples.last(where: {
+                Self.sameCycle($0.cycle, reportedCycle)
+            })?.cycle ?? reportedCycle
             let sample = UsageSample(cycle: cycle, measuredAt: measuredAt,
                                      remainingFraction: 1 - used)
             if let accountFingerprint {
@@ -92,23 +99,28 @@ struct UsageHistory {
             }
             // A cached response can be returned repeatedly, or arrive after a
             // newer request. Neither is a new observation.
-            if let latest = samples.last(where: { $0.cycle == cycle }),
+            if let latest = samples.last(where: { Self.sameCycle($0.cycle, cycle) }),
                measuredAt <= latest.measuredAt {
                 continue
             }
             // A provider may reuse a reset timestamp while beginning a fresh
             // allowance. Do not draw the old, depleted cycle into the refill.
-            if let previous = samples.last(where: { $0.cycle == cycle }),
+            if let previous = samples.last(where: { Self.sameCycle($0.cycle, cycle) }),
                sample.remainingFraction > previous.remainingFraction + 0.001 {
-                samples.removeAll { $0.cycle == cycle }
+                samples.removeAll { Self.sameCycle($0.cycle, cycle) }
             }
-            // Keep the newest real observation in a display-resolution bucket.
-            // This reduces polling noise without pretending it was measured at
-            // the bucket boundary.
+            // Keep the first and last real observation in each display bucket.
+            // The first pair forms a curve immediately; later polling only
+            // replaces the bucket's last point.
             let bucket = floor(measuredAt.timeIntervalSince1970 / Self.resolution)
-            samples.removeAll {
-                $0.cycle == cycle
-                    && floor($0.measuredAt.timeIntervalSince1970 / Self.resolution) == bucket
+            let bucketIndices = samples.indices.filter {
+                Self.sameCycle(samples[$0].cycle, cycle)
+                    && floor(samples[$0].measuredAt.timeIntervalSince1970 / Self.resolution) == bucket
+            }
+            // Legacy jitter may have left more than two identities in a
+            // bucket. Compact all but its first reading before appending.
+            for index in bucketIndices.dropFirst().reversed() {
+                samples.remove(at: index)
             }
             samples.append(sample)
         }
@@ -134,6 +146,15 @@ struct UsageHistory {
     private func save() {
         guard let data = try? JSONEncoder().encode(samples) else { return }
         defaults?.set(data, forKey: key)
+    }
+
+    static func sameCycle(_ lhs: UsageSample.CycleIdentity,
+                          _ rhs: UsageSample.CycleIdentity) -> Bool {
+        lhs.providerID == rhs.providerID
+            && lhs.windowID == rhs.windowID
+            && lhs.accountFingerprint == rhs.accountFingerprint
+            && abs(lhs.duration - rhs.duration) <= resetTolerance
+            && abs(lhs.resetsAt.timeIntervalSince(rhs.resetsAt)) <= resetTolerance
     }
 
     private static func decode(_ data: Data?) -> [UsageSample] {
@@ -192,7 +213,8 @@ struct UsageTrend: Equatable {
         grid = dates
 
         let actual = samples.filter {
-            $0.cycle == cycle && $0.measuredAt >= start
+            UsageHistory.sameCycle($0.cycle, cycle)
+                && $0.measuredAt >= start.addingTimeInterval(-UsageHistory.resetTolerance)
                 && $0.measuredAt <= min(now, end)
                 && $0.remainingFraction.isFinite
                 && (0...1).contains($0.remainingFraction)
@@ -200,6 +222,7 @@ struct UsageTrend: Equatable {
         var runs: [[UsageSample]] = []
         for sample in actual {
             if let previous = runs.last?.last,
+               sample.remainingFraction <= previous.remainingFraction + 0.001,
                Self.bucket(of: sample.measuredAt) - Self.bucket(of: previous.measuredAt) <= 1 {
                 runs[runs.count - 1].append(sample)
             } else {
@@ -220,7 +243,62 @@ struct UsageTrend: Equatable {
 
     /// Positive means more quota remains than an even pace would leave.
     func deviation(at sample: UsageSample) -> Double? {
-        guard sample.cycle == cycle else { return nil }
+        guard UsageHistory.sameCycle(sample.cycle, cycle) else { return nil }
         return sample.remainingFraction - idealRemaining(at: sample.measuredAt)
+    }
+
+    struct Forecast: Equatable {
+        enum Basis: Equatable { case recent, cycleAverage }
+
+        let origin: UsageSample
+        let ratePerSecond: Double
+        let basis: Basis
+        let basisDuration: TimeInterval
+        let exhaustionDate: Date?
+
+        func remaining(at date: Date) -> Double {
+            min(max(origin.remainingFraction
+                    - ratePerSecond * max(0, date.timeIntervalSince(origin.measuredAt)), 0), 1)
+        }
+    }
+
+    func forecast(now: Date) -> Forecast? {
+        guard now.timeIntervalSince1970.isFinite, now < end,
+              let run = observed.last, let latest = run.last,
+              now.timeIntervalSince(latest.measuredAt) >= 0,
+              now.timeIntervalSince(latest.measuredAt) <= UsageHistory.resolution
+        else { return nil }
+
+        let recentCutoff = latest.measuredAt.addingTimeInterval(-60 * 60)
+        let recent = run.filter { $0.measuredAt >= recentCutoff }
+        let firstRecent = recent.first
+        let recentDuration = firstRecent.map { latest.measuredAt.timeIntervalSince($0.measuredAt) } ?? 0
+
+        let rate: Double
+        let basis: Forecast.Basis
+        let basisDuration: TimeInterval
+        if let firstRecent, recentDuration >= UsageHistory.resolution {
+            rate = max(0, (firstRecent.remainingFraction - latest.remainingFraction) / recentDuration)
+            basis = .recent
+            basisDuration = recentDuration
+        } else {
+            let elapsed = latest.measuredAt.timeIntervalSince(start)
+            guard elapsed > 0 else { return nil }
+            rate = max(0, (1 - latest.remainingFraction) / elapsed)
+            basis = .cycleAverage
+            basisDuration = elapsed
+        }
+        guard rate.isFinite else { return nil }
+        let exhaustion: Date?
+        if latest.remainingFraction <= 0 {
+            exhaustion = latest.measuredAt
+        } else if rate > 0 {
+            let interval = latest.remainingFraction / rate
+            exhaustion = interval.isFinite ? latest.measuredAt.addingTimeInterval(interval) : nil
+        } else {
+            exhaustion = nil
+        }
+        return Forecast(origin: latest, ratePerSecond: rate, basis: basis,
+                        basisDuration: basisDuration, exhaustionDate: exhaustion)
     }
 }

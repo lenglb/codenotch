@@ -28,7 +28,7 @@ final class UsageTrendChartTests: XCTestCase {
         XCTAssertFalse(missing.hasUsageTrend)
     }
 
-    func testDailyPaceHeadlineAndSavedSelectionOpenAnActualQuotaChart() throws {
+    func testDailyPaceHeadlineKeepsActualQuotaCharts() throws {
         let original = ProviderSnapshot(id: "claude", displayName: "Claude", glyph: .claude,
             fidelity: .official, status: .ok, windows: [
                 LimitWindow(id: "session", label: "Current session", usedFraction: 0.2,
@@ -39,12 +39,9 @@ final class UsageTrendChartTests: XCTestCase {
         let paced = DailyPace.apply(to: original, now: now)
         XCTAssertEqual(paced.headlineID, DailyPace.windowID)
         XCTAssertEqual(paced.trendWindows.map(\.id), ["session", "weekly_all"])
-        for savedID in ["", DailyPace.windowID, "removed-window"] {
-            let selected = try XCTUnwrap(paced.selectedTrendWindow(id: savedID))
-            XCTAssertEqual(selected.id, "session")
-            XCTAssertNotNil(UsageTrend(providerID: paced.id, window: selected, samples: [], now: now))
+        for window in paced.trendWindows {
+            XCTAssertNotNil(UsageTrend(providerID: paced.id, window: window, samples: [], now: now))
         }
-        XCTAssertEqual(paced.selectedTrendWindow(id: "weekly_all")?.id, "weekly_all")
     }
 
     func testMissingMetadataCannotHideOtherAvailableWindowCharts() throws {
@@ -52,10 +49,37 @@ final class UsageTrendChartTests: XCTestCase {
         value.windows.insert(LimitWindow(id: "no-duration", label: "Untimed", usedFraction: 0.2,
                                          resetsAt: now.addingTimeInterval(3600)), at: 0)
         value.headlineID = "no-duration"
-        XCTAssertEqual(value.selectedTrendWindow(id: "no-duration")?.id, "primary")
+        XCTAssertEqual(value.trendWindows.map(\.id), ["secondary"])
         value.windows = [value.windows[0]]
         XCTAssertFalse(value.hasUsageTrend)
-        XCTAssertNil(value.selectedTrendWindow(id: "no-duration"))
+        XCTAssertTrue(value.trendWindows.isEmpty)
+    }
+
+    func testCodexShowsOnlyTheMainWeeklyQuotaInEitherAPISlot() {
+        var value = snapshot()
+        value.windows.append(LimitWindow(id: "spark-secondary", label: "Weekly", usedFraction: 0,
+                                         resetsAt: now.addingTimeInterval(604800), duration: 604800))
+        XCTAssertEqual(value.trendWindows.map(\.id), ["secondary"])
+        value.windows.removeAll { $0.id == "secondary" }
+        XCTAssertTrue(value.trendWindows.isEmpty, "Do not replace a missing weekly quota with Spark or 5h")
+        value.windows[0] = LimitWindow(id: "primary", label: "Weekly", usedFraction: 0.4,
+                                      resetsAt: now.addingTimeInterval(302400), duration: 604800)
+        XCTAssertEqual(value.trendWindows.map(\.id), ["primary"])
+    }
+
+    func testClaudeOrdersFableThenSessionThenAllModels() {
+        for fableID in ["weekly_fable", "weekly_scoped"] {
+            var value = snapshot(id: "claude")
+            value.windows = [
+                LimitWindow(id: "weekly_all", label: "All models", usedFraction: 0.2,
+                            resetsAt: now.addingTimeInterval(302400), duration: 604800),
+                LimitWindow(id: "session", label: "Current session", usedFraction: 0.4,
+                            resetsAt: now.addingTimeInterval(3600), duration: 18000),
+                LimitWindow(id: fableID, label: "Fable", usedFraction: 0.5,
+                            resetsAt: now.addingTimeInterval(302400), duration: 604800)
+            ]
+            XCTAssertEqual(value.trendWindows.map(\.id), [fableID, "session", "weekly_all"])
+        }
     }
 
     func testAllChartsGrowTheCardAndOverflowUsesABoundedViewport() {
@@ -97,13 +121,13 @@ final class UsageTrendChartTests: XCTestCase {
                 model.edge = edge
                 model.sizeScale = scale
                 model.screenSize = CGSize(width: 1280, height: 800)
-                var codex = snapshot()
+                var codex = snapshot(id: "claude")
                 codex.windows = (0..<12).map { index in
                     LimitWindow(id: "quota-\(index)", label: "Weekly", usedFraction: 0.2,
                                 resetsAt: now.addingTimeInterval(302400), duration: 604800)
                 }
                 codex.tokenUsage = CodexTokenUsage()
-                model.snapshots = [codex, snapshot(id: "claude")]
+                model.snapshots = [codex, snapshot()]
                 let panel = model.panelSize(cellCount: 2)
                 XCTAssertLessThanOrEqual(panel.height, 800.01, "\(edge), \(scale)")
                 XCTAssertLessThanOrEqual(panel.width, 1280.01)
@@ -112,7 +136,7 @@ final class UsageTrendChartTests: XCTestCase {
     }
 
     func testTrendCardRendersMeasuredAndEmptyHistoriesInBothAppearances() throws {
-        let snapshot = snapshot()
+        let snapshot = snapshot(id: "claude")
         let window = snapshot.windows[0]
         let reset = try XCTUnwrap(window.resetsAt)
         let cycle = UsageSample.CycleIdentity(providerID: snapshot.id, windowID: window.id,
