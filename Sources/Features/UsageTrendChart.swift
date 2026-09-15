@@ -13,6 +13,16 @@ extension ProviderSnapshot {
     }
 
     var hasUsageTrend: Bool { !trendWindows.isEmpty }
+
+    /// The ring may lead with DailyPace, a synthetic weekly-budget ratio with
+    /// no independent cycle. Saved selections must use the same eligibility
+    /// rules as navigation so they cannot reopen an empty chart.
+    func selectedTrendWindow(id: String) -> LimitWindow? {
+        let available = trendWindows
+        return available.first { $0.id == id }
+            ?? available.first { $0.id == headlineID }
+            ?? available.first
+    }
 }
 
 /// Shares the card's typography, tracks and accent. Selecting a different
@@ -36,9 +46,7 @@ struct UsageTrendSection: View {
     }
 
     private var window: LimitWindow? {
-        snapshot.windows.first { $0.id == selectedID }
-            ?? snapshot.windows.first { $0.id == snapshot.headlineID }
-            ?? snapshot.windows.first
+        snapshot.selectedTrendWindow(id: selectedID)
     }
 
     var body: some View {
@@ -71,13 +79,6 @@ struct UsageTrendSection: View {
 
                 readout(trend: trend)
                 allowance(trend: trend)
-            } else if let window {
-                selector(window)
-                LimitWindowRow(window: window, fidelity: snapshot.fidelity, now: now,
-                               resetTimeFormat: resetTimeFormat, showsUsagePace: false)
-                Text(L10n.t("A trend needs a reported reset and window duration."))
-                    .foregroundStyle(Palette.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
             }
         }
         .font(Typography.cardBody)
@@ -88,7 +89,7 @@ struct UsageTrendSection: View {
 
     private func selector(_ window: LimitWindow) -> some View {
         // Inline arrows avoid a pop-up extending beyond the notch's hover
-        // region. Every provider-supplied window remains one click away.
+        // region. Every chartable provider window remains one click away.
         HStack(spacing: Design.px(12)) {
             Button { select(-1) } label: { Image(systemName: "chevron.left") }
                 .accessibilityLabel(L10n.t("Previous usage window"))
@@ -108,7 +109,7 @@ struct UsageTrendSection: View {
     }
 
     private func select(_ offset: Int) {
-        let windows = snapshot.windows
+        let windows = snapshot.trendWindows
         guard !windows.isEmpty else { return }
         let index = windows.firstIndex { $0.id == window?.id } ?? 0
         selectedID = windows[(index + offset + windows.count) % windows.count].id

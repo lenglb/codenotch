@@ -28,6 +28,36 @@ final class UsageTrendChartTests: XCTestCase {
         XCTAssertFalse(missing.hasUsageTrend)
     }
 
+    func testDailyPaceHeadlineAndSavedSelectionOpenAnActualQuotaChart() throws {
+        let original = ProviderSnapshot(id: "claude", displayName: "Claude", glyph: .claude,
+            fidelity: .official, status: .ok, windows: [
+                LimitWindow(id: "session", label: "Current session", usedFraction: 0.2,
+                            resetsAt: now.addingTimeInterval(3600), duration: 18000),
+                LimitWindow(id: "weekly_all", label: "All models", usedFraction: 0.3,
+                            resetsAt: now.addingTimeInterval(302400), duration: 604800)
+            ], headlineID: "session", weeklyID: "weekly_all")
+        let paced = DailyPace.apply(to: original, now: now)
+        XCTAssertEqual(paced.headlineID, DailyPace.windowID)
+        XCTAssertEqual(paced.trendWindows.map(\.id), ["session", "weekly_all"])
+        for savedID in ["", DailyPace.windowID, "removed-window"] {
+            let selected = try XCTUnwrap(paced.selectedTrendWindow(id: savedID))
+            XCTAssertEqual(selected.id, "session")
+            XCTAssertNotNil(UsageTrend(providerID: paced.id, window: selected, samples: [], now: now))
+        }
+        XCTAssertEqual(paced.selectedTrendWindow(id: "weekly_all")?.id, "weekly_all")
+    }
+
+    func testMissingMetadataCannotHideOtherAvailableWindowCharts() throws {
+        var value = snapshot()
+        value.windows.insert(LimitWindow(id: "no-duration", label: "Untimed", usedFraction: 0.2,
+                                         resetsAt: now.addingTimeInterval(3600)), at: 0)
+        value.headlineID = "no-duration"
+        XCTAssertEqual(value.selectedTrendWindow(id: "no-duration")?.id, "primary")
+        value.windows = [value.windows[0]]
+        XCTAssertFalse(value.hasUsageTrend)
+        XCTAssertNil(value.selectedTrendWindow(id: "no-duration"))
+    }
+
     func testChartBudgetReplacesWindowRowsAndGroupsWithoutGrowingForMoreWindows() {
         let single = NotchLayout.cardHeight(windowCount: 1, hasUsageTrend: true)
         let multiple = NotchLayout.cardHeight(windowCount: 12, groupCount: 5, hasUsageTrend: true)

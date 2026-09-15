@@ -1,6 +1,6 @@
 # Usage pacing chart (personal fork)
 
-Hover a Codex or Claude ring. Use the arrows above the chart to select any available timed quota window: session, weekly, model-specific weekly, and additional Codex limits supplied by the provider. The selection is remembered per profile. The original card surface, typography, accent, bar and session list are retained; the selected window replaces the expanded list so the card stays a fixed height.
+Hover a Codex or Claude ring. Use the arrows above the chart to select any available timed quota window: session, weekly, model-specific weekly, and additional Codex limits supplied by the provider. The selection is remembered per profile. The synthetic Claude Daily pace ring is not a quota cycle and is excluded from chart navigation. If it leads the ring or was selected by an older build, the chart falls back to a real timed quota window; the Daily pace ring setting remains available. The original card surface, typography, accent, bar and session list are retained; the selected window replaces the expanded list so the card stays a fixed height.
 
 - **Target (dashed):** a constant pace from 100% remaining at the start (`reset - duration`) to 0% at reset.
 - **Actual (accent):** locally observed remaining quota, with real observation timestamps. History starts when this build begins collecting it; no historical zeroes or synthetic backfill.
