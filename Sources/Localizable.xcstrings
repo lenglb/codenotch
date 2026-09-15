@@ -19672,6 +19672,66 @@
           }
         }
       }
+    },
+    "Window": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fenster"
+          }
+        }
+      }
+    },
+    "History": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Verlauf"
+          }
+        }
+      }
+    },
+    "Zoom into recorded history": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Auf den aufgezeichneten Verlauf zoomen"
+          }
+        }
+      }
+    },
+    "Show entire quota window": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gesamtes Zeitfenster anzeigen"
+          }
+        }
+      }
+    },
+    "Measurement gap": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Messpause"
+          }
+        }
+      }
+    },
+    "Dotted connection, no measured values": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gepunktete Verbindung, keine Messwerte"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

@@ -179,6 +179,11 @@ struct UsageHistory {
 /// Chart-ready pacing for one live window. Ideal data may extend to the reset;
 /// observations contain only actual readings at or before `now`.
 struct UsageTrend: Equatable {
+    struct ObservationGap: Equatable {
+        let before: UsageSample
+        let after: UsageSample
+    }
+
     let cycle: UsageSample.CycleIdentity
     let start: Date
     let end: Date
@@ -234,6 +239,45 @@ struct UsageTrend: Equatable {
 
     private static func bucket(of date: Date) -> Int {
         Int(floor(date.timeIntervalSince1970 / UsageHistory.resolution))
+    }
+
+    /// Discontinuities between real readings that a chart should render as a
+    /// gap. An allowance refill is deliberately excluded: it starts a new run
+    /// but must never look like a missing-data bridge.
+    var observationGaps: [ObservationGap] {
+        guard observed.count > 1 else { return [] }
+        return zip(observed, observed.dropFirst()).compactMap { beforeRun, afterRun in
+            guard let before = beforeRun.last,
+                  let after = afterRun.first,
+                  after.remainingFraction <= before.remainingFraction + 0.001
+            else { return nil }
+            return ObservationGap(before: before, after: after)
+        }
+    }
+
+    /// The full quota window, or a focused range around recent observations.
+    /// If the retained history is older than six hours, retain the full window
+    /// so that the focused view cannot make all actual readings disappear.
+    func displayRange(now: Date, fullWindow: Bool) -> ClosedRange<Date> {
+        guard !fullWindow,
+              now.timeIntervalSince1970.isFinite,
+              !observed.isEmpty
+        else { return start...end }
+
+        let clampedNow = min(max(now, start), end)
+        let actual = observed.flatMap { $0 }.filter { $0.measuredAt <= clampedNow }
+        guard let earliestObservedAt = actual.first?.measuredAt,
+              let latestObservedAt = actual.last?.measuredAt,
+              latestObservedAt >= clampedNow.addingTimeInterval(-6 * 3600)
+        else { return start...end }
+
+        let lower = max(start, max(clampedNow.addingTimeInterval(-6 * 3600),
+                                   earliestObservedAt.addingTimeInterval(-900)))
+        let futurePadding = max(900, min(3600,
+            clampedNow.timeIntervalSince(lower) * 0.25))
+        let upper = min(end, clampedNow.addingTimeInterval(futurePadding))
+        guard lower < upper else { return start...end }
+        return lower...upper
     }
 
     func idealRemaining(at date: Date) -> Double {

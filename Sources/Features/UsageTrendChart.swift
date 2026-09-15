@@ -108,7 +108,8 @@ private struct UsageWindowChart: View {
         let date = inspectedDate ?? min(max(now, trend.start), trend.end)
         // A nearby last observation is shown with its real timestamp. Nothing
         // is extrapolated into a future tick or carried across an offline gap.
-        let sample = date <= now ? all.last {
+        let isGap = trend.observationGaps.contains { date > $0.before.measuredAt && date < $0.after.measuredAt }
+        let sample = date <= now && !isGap ? all.last {
             $0.measuredAt <= date && date.timeIntervalSince($0.measuredAt) <= UsageHistory.resolution
         } : nil
         let reference = date
@@ -125,7 +126,7 @@ private struct UsageWindowChart: View {
             HStack {
                 Text(sample.map { L10n.t("Remaining") + " " + percent($0.remainingFraction) }
                      ?? prediction.map { L10n.t("Forecast") + " " + percent($0) }
-                     ?? (date > now ? L10n.t("Future target") : L10n.t("No reading at this time")))
+                     ?? (isGap ? L10n.t("Measurement gap") : date > now ? L10n.t("Future target") : L10n.t("No reading at this time")))
                     .foregroundStyle(Palette.textPrimary)
                 Spacer(minLength: 0)
                 if let delta {
@@ -134,7 +135,8 @@ private struct UsageWindowChart: View {
                 }
             }
             Text(sample.map { L10n.t("Reading") + " " + $0.measuredAt.formatted(.dateTime.hour().minute()) }
-                 ?? (prediction != nil ? L10n.t("Estimate at the same workload")
+                 ?? (isGap ? L10n.t("Dotted connection, no measured values")
+                     : prediction != nil ? L10n.t("Estimate at the same workload")
                      : date > now ? L10n.t("Future usage is not yet known") : L10n.t("History starts with observed readings")))
                 .foregroundStyle(Palette.textSecondary)
         }
@@ -211,14 +213,34 @@ struct UsageTrendPlot: View {
     @Binding var inspectedDate: Date?
     let now: Date
     @Environment(\.codenotchAccentColor) private var accent
+    @State private var fullWindow = false
+    private var displayRange: ClosedRange<Date> { trend.displayRange(now: now, fullWindow: fullWindow) }
+    private var visibleGrid: [Date] {
+        let range = displayRange
+        return ([range.lowerBound] + trend.grid.filter { range.contains($0) } + [range.upperBound])
+            .sorted()
+    }
 
     private var selected: Date { inspectedDate ?? min(max(now, trend.start), trend.end) }
 
     var body: some View {
+        // Resolve the range once per render, not once for every path vertex.
+        let range = displayRange
         VStack(spacing: Design.px(10)) {
             HStack(spacing: Design.px(8)) {
-                Text(L10n.t("Budget"))
-                    .foregroundStyle(Palette.textPrimary)
+                Button {
+                    fullWindow.toggle()
+                    inspectedDate = nil
+                } label: {
+                    HStack(spacing: Design.px(3)) {
+                        Text(fullWindow ? L10n.t("Window") : L10n.t("History"))
+                        Image(systemName: "arrow.left.and.right").font(.system(size: Design.px(17)))
+                    }
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(Palette.textPrimary)
+                .accessibilityLabel(fullWindow ? L10n.t("Zoom into recorded history") : L10n.t("Show entire quota window"))
+                .help(fullWindow ? L10n.t("Zoom into recorded history") : L10n.t("Show entire quota window"))
                 Spacer(minLength: 0)
                 Text("− " + L10n.t("Actual")).foregroundStyle(accent)
                 Text("┄ " + L10n.t("Target")).foregroundStyle(Palette.textSecondary)
@@ -237,23 +259,31 @@ struct UsageTrendPlot: View {
                         }
                     }.stroke(Palette.ringTrack, lineWidth: Design.px(1))
                     Path { path in
-                        path.move(to: point(trend.start, 1, size))
-                        path.addLine(to: point(trend.end, 0, size))
+                        path.move(to: point(range.lowerBound, trend.idealRemaining(at: range.lowerBound), size, range))
+                        path.addLine(to: point(range.upperBound, trend.idealRemaining(at: range.upperBound), size, range))
                     }.stroke(Palette.textSecondary, style: StrokeStyle(lineWidth: Design.px(3), dash: [Design.px(9), Design.px(7)]))
                     Path { path in
                         for run in trend.observed {
                             guard let first = run.first else { continue }
-                            path.move(to: point(first.measuredAt, first.remainingFraction, size))
+                            path.move(to: point(first.measuredAt, first.remainingFraction, size, range))
                             for sample in run.dropFirst() {
-                                path.addLine(to: point(sample.measuredAt, sample.remainingFraction, size))
+                                path.addLine(to: point(sample.measuredAt, sample.remainingFraction, size, range))
                             }
                         }
                     }.stroke(accent, style: StrokeStyle(lineWidth: Design.px(4), lineCap: .round, lineJoin: .round))
+                    Path { path in
+                        for gap in trend.observationGaps {
+                            path.move(to: point(gap.before.measuredAt, gap.before.remainingFraction, size, range))
+                            path.addLine(to: point(gap.after.measuredAt, gap.after.remainingFraction, size, range))
+                        }
+                    }
+                    .stroke(accent.opacity(0.65), style: StrokeStyle(lineWidth: Design.px(3), lineCap: .round,
+                                                                    dash: [Design.px(1), Design.px(9)]))
                     if let forecast = trend.forecast(now: now) {
                         Path { path in
                             let until = min(trend.end, forecast.exhaustionDate ?? trend.end)
-                            path.move(to: point(forecast.origin.measuredAt, forecast.origin.remainingFraction, size))
-                            path.addLine(to: point(until, forecast.remaining(at: until), size))
+                            path.move(to: point(forecast.origin.measuredAt, forecast.origin.remainingFraction, size, range))
+                            path.addLine(to: point(until, forecast.remaining(at: until), size, range))
                         }
                         .stroke(accent, style: StrokeStyle(lineWidth: Design.px(3), dash: [Design.px(9), Design.px(7)]))
                     }
@@ -261,25 +291,32 @@ struct UsageTrendPlot: View {
                         // Single measurements must remain visible on first launch.
                         for run in trend.observed {
                             for sample in run.count == 1 ? run : Array(run.suffix(1)) {
-                                let p = point(sample.measuredAt, sample.remainingFraction, size)
+                                let p = point(sample.measuredAt, sample.remainingFraction, size, range)
                                 path.addEllipse(in: CGRect(x: p.x - 2, y: p.y - 2, width: 4, height: 4))
                             }
                         }
                     }.fill(accent)
                     Path { path in
-                        let x = x(selected, size)
+                        let x = x(selected, size, range)
                         path.move(to: CGPoint(x: x, y: 0))
                         path.addLine(to: CGPoint(x: x, y: size.height))
                     }.stroke(Palette.textPrimary.opacity(0.5), lineWidth: Design.px(2))
                     VStack {
                         HStack { Text("100%"); Spacer() }
                         Spacer()
-                        HStack { Text("0%"); Spacer() }
+                        HStack {
+                            Text("0%")
+                            Spacer()
+                            if trend.observationGaps.contains(where: { $0.after.measuredAt > range.lowerBound && $0.before.measuredAt < range.upperBound }) {
+                                Text("··· " + L10n.t("Measurement gap"))
+                            }
+                        }
                     }
                     .font(.system(size: Design.fontSize(capPixels: 14)))
                     .foregroundStyle(Palette.textSecondary)
                     .allowsHitTesting(false)
                 }
+                .clipped()
                 .contentShape(Rectangle())
                 .onContinuousHover { phase in
                     switch phase {
@@ -293,7 +330,7 @@ struct UsageTrendPlot: View {
                 .accessibilityAdjustableAction { step($0 == .increment ? 1 : -1) }
             }
             HStack {
-                Text(trend.start.formatted(.dateTime.month(.abbreviated).day().hour().minute()))
+                Text(range.lowerBound.formatted(.dateTime.month(.abbreviated).day().hour().minute()))
                 Spacer(minLength: 0)
                 Button { step(-1) } label: { Image(systemName: "chevron.left") }
                     .accessibilityLabel(L10n.t("Previous 15 minutes"))
@@ -301,7 +338,7 @@ struct UsageTrendPlot: View {
                 Button { step(1) } label: { Image(systemName: "chevron.right") }
                     .accessibilityLabel(L10n.t("Next 15 minutes"))
                 Spacer(minLength: 0)
-                Text(trend.end.formatted(.dateTime.month(.abbreviated).day().hour().minute()))
+                Text(range.upperBound.formatted(.dateTime.month(.abbreviated).day().hour().minute()))
             }
             .buttonStyle(.plain)
             .foregroundStyle(Palette.textSecondary)
@@ -313,22 +350,27 @@ struct UsageTrendPlot: View {
 
     private func inspect(x: CGFloat, width: CGFloat) {
         guard width > 0 else { return }
-        let target = trend.start.addingTimeInterval(min(max(x / width, 0), 1) * trend.cycle.duration)
-        inspectedDate = trend.grid.min { abs($0.timeIntervalSince(target)) < abs($1.timeIntervalSince(target)) }
+        let target = displayRange.lowerBound.addingTimeInterval(min(max(x / width, 0), 1)
+            * displayRange.upperBound.timeIntervalSince(displayRange.lowerBound))
+        inspectedDate = visibleGrid.min { abs($0.timeIntervalSince(target)) < abs($1.timeIntervalSince(target)) }
     }
 
     private func step(_ direction: Int) {
-        guard let index = trend.grid.indices.min(by: {
-            abs(trend.grid[$0].timeIntervalSince(selected)) < abs(trend.grid[$1].timeIntervalSince(selected))
+        let dates = trend.grid.filter { displayRange.contains($0) }
+        guard let index = dates.indices.min(by: {
+            abs(dates[$0].timeIntervalSince(selected)) < abs(dates[$1].timeIntervalSince(selected))
         }) else { return }
-        inspectedDate = trend.grid[min(max(index + direction, 0), trend.grid.count - 1)]
+        inspectedDate = dates[min(max(index + direction, 0), dates.count - 1)]
     }
 
-    private func x(_ date: Date, _ size: CGSize) -> CGFloat {
-        min(max(date.timeIntervalSince(trend.start) / trend.cycle.duration, 0), 1) * size.width
+    private func x(_ date: Date, _ size: CGSize, _ range: ClosedRange<Date>) -> CGFloat {
+        // Do not clamp offscreen observations onto the axis boundary: that
+        // would draw false vertical segments in the zoomed chart.
+        date.timeIntervalSince(range.lowerBound)
+            / range.upperBound.timeIntervalSince(range.lowerBound) * size.width
     }
     private func y(_ remaining: Double, _ size: CGSize) -> CGFloat { (1 - remaining) * size.height }
-    private func point(_ date: Date, _ remaining: Double, _ size: CGSize) -> CGPoint {
-        CGPoint(x: x(date, size), y: y(remaining, size))
+    private func point(_ date: Date, _ remaining: Double, _ size: CGSize, _ range: ClosedRange<Date>) -> CGPoint {
+        CGPoint(x: x(date, size, range), y: y(remaining, size))
     }
 }

@@ -167,6 +167,56 @@ final class UsageTrendChartTests: XCTestCase {
         }
     }
 
+    /// Optional read-only replay of local usage-only samples. The fixture stays
+    /// outside the repository and contains no credentials or account IDs.
+    func testRecordedHistoryReplay() throws {
+        guard let path = ProcessInfo.processInfo.environment["HISTORY_REPLAY_PATH"],
+              let directory = ProcessInfo.processInfo.environment["TREND_RENDER_DIR"] else {
+            throw XCTSkip("Supply HISTORY_REPLAY_PATH and TREND_RENDER_DIR for local history replay")
+        }
+        let samples = try JSONDecoder().decode([UsageSample].self, from: Data(contentsOf: URL(fileURLWithPath: path)))
+        let clock = try XCTUnwrap(samples.map(\.measuredAt).max()).addingTimeInterval(60)
+        let oldLocale = L10n.testLocale
+        L10n.testLocale = Locale(identifier: "de")
+        defer { L10n.testLocale = oldLocale }
+        let snapshots = ["codex", "claude"].map { provider in
+            let rows = samples.filter { $0.providerID == provider }
+            let windows = Dictionary(grouping: rows, by: \.windowID).compactMap { id, readings -> LimitWindow? in
+                guard let last = readings.max(by: { $0.measuredAt < $1.measuredAt }) else { return nil }
+                return LimitWindow(id: id, label: id == "session" ? "5 Stunden" : id == "weekly_scoped" ? "Fable" : "Wochenlimit",
+                                   usedFraction: 1 - last.remainingFraction, resetsAt: last.resetsAt, duration: last.duration)
+            }
+            return ProviderSnapshot(id: provider, displayName: provider.capitalized,
+                                    glyph: provider == "codex" ? .openai : .claude,
+                                    fidelity: .official, status: .ok, windows: windows)
+        }
+        for snapshot in snapshots {
+            for window in snapshot.trendWindows {
+                let trend = try XCTUnwrap(UsageTrend(providerID: snapshot.id, window: window, samples: samples, now: clock))
+                XCTAssertGreaterThan(trend.observed.flatMap { $0 }.count, 1)
+                let range = trend.displayRange(now: clock, fullWindow: false)
+                XCTAssertLessThan(range.upperBound.timeIntervalSince(range.lowerBound), window.duration!)
+            }
+        }
+        let view = HStack(alignment: .top, spacing: 20) {
+            ForEach(snapshots) { snapshot in
+                VStack(alignment: .leading) {
+                    Text(snapshot.displayName + " · Aufgezeichnete Messwerte").font(Typography.cardBody)
+                    UsageTrendSection(snapshot: snapshot, samples: samples, now: clock)
+                }
+                .padding(NotchLayout.cardPadding)
+                .frame(width: NotchLayout.cardWidth)
+                .background(Color.white)
+            }
+        }.padding(20).background(Color(white: 0.94)).environment(\.colorScheme, .light)
+        let renderer = ImageRenderer(content: view)
+        renderer.scale = 2
+        let image = try XCTUnwrap(renderer.nsImage)
+        let png = try XCTUnwrap(NSBitmapImageRep(data: XCTUnwrap(image.tiffRepresentation))?
+            .representation(using: .png, properties: [:]))
+        try png.write(to: URL(fileURLWithPath: directory).appendingPathComponent("recorded-history-replay.png"))
+    }
+
     func testWeeklyPlotAndFullTooltipRender() throws {
         let snapshot = snapshot(duration: 604800)
         let reset = try XCTUnwrap(snapshot.windows[0].resetsAt)
