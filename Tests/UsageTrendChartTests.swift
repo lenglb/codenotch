@@ -194,8 +194,8 @@ final class UsageTrendChartTests: XCTestCase {
             for window in snapshot.trendWindows {
                 let trend = try XCTUnwrap(UsageTrend(providerID: snapshot.id, window: window, samples: samples, now: clock))
                 XCTAssertGreaterThan(trend.observed.flatMap { $0 }.count, 1)
-                let range = trend.displayRange(now: clock, fullWindow: false)
-                XCTAssertLessThan(range.upperBound.timeIntervalSince(range.lowerBound), window.duration!)
+                let range = trend.displayRange
+                XCTAssertEqual(range.upperBound.timeIntervalSince(range.lowerBound), window.duration!)
             }
         }
         let view = HStack(alignment: .top, spacing: 20) {

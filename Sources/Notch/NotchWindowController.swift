@@ -46,6 +46,11 @@ final class NotchWindowController {
     private var clearHoverWork: DispatchWorkItem?
     private var clockTimer: Timer?
     private var cursorTimer: Timer?
+    /// WindowServer enumeration is comparatively expensive. Mouse movement can
+    /// arrive hundreds of times per second, while the events that can change
+    /// the answer are already observed below. Keep their latest answer for the
+    /// cursor path; the slow poll refreshes it as a fallback for missed events.
+    private var cachedFullScreenState: Bool?
 
     /// Hover in is quick; hover out waits, because the pointer has to cross the
     /// gap between the notch and the card without the card vanishing under it.
@@ -68,7 +73,7 @@ final class NotchWindowController {
     /// When the current peek's five seconds are up.
     ///
     /// The hover fold has to be told to leave it alone until then. Without
-    /// this the cursor poll — which runs every 0.3s and asks "is the pointer on
+    /// this the periodic cursor poll — which asks "is the pointer on
     /// the notch?", to which the answer during a peek is almost always no —
     /// scheduled a fold immediately, and the notch opened and shut inside a
     /// second. A peek is not the pointer arriving, so the pointer leaving is
@@ -98,7 +103,8 @@ final class NotchWindowController {
     /// When a full-screen app is active on the current space, auto-folds the notch.
     /// When returning to a desktop space with `isAlwaysOn`, restores the unfolded state.
     func handleActiveSpaceOrAppChange() {
-        if foldsForFullScreen && isFullScreenActive() {
+        cachedFullScreenState = nil
+        if foldsForFullScreen && fullScreenState() {
             if let panel {
                 let local = localCursor(in: panel.frame)
                 let overTooltip = model.hoveredIndex
@@ -156,7 +162,10 @@ final class NotchWindowController {
             for: NSApplication.didChangeScreenParametersNotification
         )
         .sink { [weak self] _ in
-            MainActor.assumeIsolated { self?.relocate() }
+            MainActor.assumeIsolated {
+                self?.cachedFullScreenState = nil
+                self?.relocate()
+            }
         }
         .store(in: &cancellables)
 
@@ -235,6 +244,7 @@ final class NotchWindowController {
         foldWork?.cancel()
         cursorTimer?.invalidate()
         cursorTimer = nil
+        cachedFullScreenState = nil
         clockTimer?.invalidate()
         mouseMonitors.forEach(NSEvent.removeMonitor)
         mouseMonitors.removeAll()
@@ -518,12 +528,13 @@ final class NotchWindowController {
     /// re-anchored underneath a parked pointer would otherwise sit there with
     /// stale hover state until the user jogged the mouse.
     private func startWatchingCursor() {
-        let poll = Timer(timeInterval: 0.3, repeats: true) { [weak self] _ in
+        let poll = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
                 self?.handleActiveSpaceOrAppChange()
                 self?.cursorMoved()
             }
         }
+        poll.tolerance = 0.2
         RunLoop.main.add(poll, forMode: .common)
         cursorTimer = poll
 
@@ -547,6 +558,13 @@ final class NotchWindowController {
         return CGPoint(x: mouse.x - frame.minX, y: frame.maxY - mouse.y)
     }
 
+    private func fullScreenState() -> Bool {
+        if let cachedFullScreenState { return cachedFullScreenState }
+        let state = isFullScreenActive()
+        cachedFullScreenState = state
+        return state
+    }
+
     // Not private: tests drive the hover fold through it, the same way they
     // drive the event fold through handleActiveSpaceOrAppChange.
     func cursorMoved() {
@@ -559,8 +577,11 @@ final class NotchWindowController {
         // handleActiveSpaceOrAppChange: left ungated, the hover fold out-votes
         // "Always show" under a full-screen app while the other path keeps
         // restoring it — the notch ends up folding on every poll.
-        setExpanded(liveRect.contains(local) || overTooltip,
-                    ignoreAlwaysOn: foldsForFullScreen && isFullScreenActive())
+        let isOverNotch = liveRect.contains(local) || overTooltip
+        setExpanded(
+            isOverNotch,
+            ignoreAlwaysOn: !isOverNotch && foldsForFullScreen && fullScreenState()
+        )
 
         var target: Int?
         if model.isExpanded, notchRect.contains(local) {

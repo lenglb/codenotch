@@ -546,6 +546,66 @@ final class CodexActivityTests: XCTestCase {
         XCTAssertNil(CodexRolloutActivity.state(from: url))
     }
 
+    func testReverseScanHandlesLargeLinesChunkBoundariesAndPartialWrites() throws {
+        let started = #"{"type":"event_msg","payload":{"type":"task_started"}}"#
+        let complete = #"{"type":"event_msg","payload":{"type":"task_complete"}}"#
+        let unrelated = #"{"type":"response_item","payload":{"text":""#
+            + String(repeating: "ä🙂task_complete", count: 20_000) + #""}}"#
+        let url = try rollout([started, complete, unrelated, #"{"type":"event_msg","payload":"#])
+        XCTAssertEqual(CodexRolloutActivity.state(from: url), .success,
+                       "A partial trailing JSON record must not hide the latest complete lifecycle event")
+        // Put the lifecycle line across the reader's backwards chunk boundary.
+        try (started + "\n" + complete + "\n" + String(repeating: "x", count: 65_510))
+            .data(using: .utf8)!.write(to: url)
+        XCTAssertEqual(CodexRolloutActivity.state(from: url), .success)
+    }
+
+    func testActivityReaderCachesUnchangedFilesAndInvalidatesOnAppendTruncateAndReplace() throws {
+        let started = #"{"type":"event_msg","payload":{"type":"task_started"}}"#
+        let complete = #"{"type":"event_msg","payload":{"type":"task_complete"}}"#
+        let url = try rollout([started])
+        var scans = 0
+        let reader = CodexRolloutActivity.Reader { url in
+            scans += 1
+            return CodexRolloutActivity.state(from: url)
+        }
+        XCTAssertEqual(reader.state(from: url), .busy)
+        XCTAssertEqual(reader.state(from: url), .busy)
+        XCTAssertEqual(scans, 1, "Unchanged rollouts must incur no content read")
+
+        let file = try FileHandle(forWritingTo: url)
+        try file.seekToEnd()
+        try file.write(contentsOf: Data(("\n" + complete).utf8))
+        try file.close()
+        XCTAssertEqual(reader.state(from: url), .success)
+        XCTAssertEqual(scans, 2)
+
+        try Data(started.utf8).write(to: url)
+        XCTAssertEqual(reader.state(from: url), .busy)
+        XCTAssertEqual(scans, 3)
+
+        try Data(complete.utf8).write(to: url, options: .atomic)
+        XCTAssertEqual(reader.state(from: url), .success)
+        XCTAssertEqual(scans, 4)
+        try FileManager.default.removeItem(at: url)
+        XCTAssertNil(reader.state(from: url), "Deletion must clear the cached state")
+    }
+
+    func testCachedAbortDoesNotFallBackToAnOlderCompletion() throws {
+        let url = try rollout([
+            #"{"type":"event_msg","payload":{"type":"task_complete"}}"#,
+            #"{"type":"event_msg","payload":{"type":"turn_aborted"}}"#
+        ])
+        var scans = 0
+        let reader = CodexRolloutActivity.Reader { url in
+            scans += 1
+            return CodexRolloutActivity.state(from: url)
+        }
+        XCTAssertNil(reader.state(from: url))
+        XCTAssertNil(reader.state(from: url))
+        XCTAssertEqual(scans, 1)
+    }
+
     func testARolloutWrittenJustNowIsBusy() throws {
         let s = try XCTUnwrap(CodexActivityMonitor.session(
             id: "codex.x", name: "Codex",

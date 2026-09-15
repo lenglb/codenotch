@@ -213,8 +213,7 @@ struct UsageTrendPlot: View {
     @Binding var inspectedDate: Date?
     let now: Date
     @Environment(\.codenotchAccentColor) private var accent
-    @State private var fullWindow = false
-    private var displayRange: ClosedRange<Date> { trend.displayRange(now: now, fullWindow: fullWindow) }
+    private var displayRange: ClosedRange<Date> { trend.displayRange }
     private var visibleGrid: [Date] {
         let range = displayRange
         return ([range.lowerBound] + trend.grid.filter { range.contains($0) } + [range.upperBound])
@@ -228,19 +227,8 @@ struct UsageTrendPlot: View {
         let range = displayRange
         VStack(spacing: Design.px(10)) {
             HStack(spacing: Design.px(8)) {
-                Button {
-                    fullWindow.toggle()
-                    inspectedDate = nil
-                } label: {
-                    HStack(spacing: Design.px(3)) {
-                        Text(fullWindow ? L10n.t("Window") : L10n.t("History"))
-                        Image(systemName: "arrow.left.and.right").font(.system(size: Design.px(17)))
-                    }
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(Palette.textPrimary)
-                .accessibilityLabel(fullWindow ? L10n.t("Zoom into recorded history") : L10n.t("Show entire quota window"))
-                .help(fullWindow ? L10n.t("Zoom into recorded history") : L10n.t("Show entire quota window"))
+                Text(L10n.t("Budget"))
+                    .foregroundStyle(Palette.textPrimary)
                 Spacer(minLength: 0)
                 Text("− " + L10n.t("Actual")).foregroundStyle(accent)
                 Text("┄ " + L10n.t("Target")).foregroundStyle(Palette.textSecondary)

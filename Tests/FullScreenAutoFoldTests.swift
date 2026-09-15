@@ -97,6 +97,50 @@ final class FullScreenAutoFoldTests: XCTestCase {
         XCTAssertFalse(controller.model.isExpanded, "The notch must fold when a full-screen app activates")
     }
 
+    func testRepeatedCursorMovementReusesFullScreenDetection() throws {
+        let controller = NotchWindowController()
+        controller.show()
+        defer { controller.stop() }
+
+        controller.model.isExpanded = true
+        controller.model.isAlwaysOn = true
+        try skipIfPointerOnNotch(controller)
+        var detections = 0
+        controller.isFullScreenActive = {
+            detections += 1
+            return false
+        }
+
+        controller.cursorMoved()
+        controller.cursorMoved()
+        controller.cursorMoved()
+
+        XCTAssertEqual(detections, 1, "Mouse events should reuse the latest full-screen result")
+    }
+
+    func testSpaceAndApplicationNotificationsInvalidateFullScreenDetection() {
+        let controller = NotchWindowController()
+        controller.show()
+        defer { controller.stop() }
+
+        var detections = 0
+        controller.isFullScreenActive = {
+            detections += 1
+            return false
+        }
+
+        NSWorkspace.shared.notificationCenter.post(
+            name: NSWorkspace.activeSpaceDidChangeNotification,
+            object: nil
+        )
+        NSWorkspace.shared.notificationCenter.post(
+            name: NSWorkspace.didActivateApplicationNotification,
+            object: nil
+        )
+
+        XCTAssertEqual(detections, 2, "Each app or Space change must force a fresh full-screen result")
+    }
+
     func testControllerDoesNotFoldWhenAppIsNotFullScreen() {
         let controller = NotchWindowController()
         controller.show()

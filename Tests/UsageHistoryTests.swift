@@ -432,56 +432,20 @@ final class UsageHistoryTests: XCTestCase {
         XCTAssertTrue(trend.observationGaps.isEmpty)
     }
 
-    func testDisplayRangeFocusesRecentWeeklyHistory() throws {
-        let duration = 7 * 24 * 3600.0
-        let reset = start.addingTimeInterval(duration)
-        let weekly = LimitWindow(id: "weekly", label: "Weekly", usedFraction: 0.2,
-                                 resetsAt: reset, duration: duration)
-        let cycle = UsageSample.CycleIdentity(providerID: "codex", windowID: weekly.id,
-            resetsAt: reset, duration: duration)
-        let first = start.addingTimeInterval(2 * 24 * 3600)
-        let readings = (0..<9).map { index in
-            UsageSample(cycle: cycle, measuredAt: first.addingTimeInterval(Double(index) * 15 * 60),
-                        remainingFraction: 0.9 - Double(index) * 0.02)
-        }
-        let now = readings.last!.measuredAt
-        let trend = try XCTUnwrap(UsageTrend(providerID: "codex", window: weekly,
-            samples: readings, now: now))
-        let range = trend.displayRange(now: now, fullWindow: false)
-
-        XCTAssertGreaterThanOrEqual(readings.last!.measuredAt.timeIntervalSince(readings.first!.measuredAt)
-                                    / range.upperBound.timeIntervalSince(range.lowerBound), 0.5)
-        XCTAssertEqual(trend.displayRange(now: now, fullWindow: true), trend.start...trend.end)
-    }
-
-    func testDisplayRangeFallsBackToFullWindowWithoutRecentObservations() throws {
-        let baseWindow = window()
-        let cycle = UsageSample.CycleIdentity(providerID: "codex", windowID: baseWindow.id,
-            resetsAt: baseWindow.resetsAt!, duration: baseWindow.duration!)
-        let now = start.addingTimeInterval(4 * 3600)
-        let outdated = UsageSample(cycle: cycle, measuredAt: start, remainingFraction: 0.9)
-        let oldTrend = try XCTUnwrap(UsageTrend(providerID: "codex", window: baseWindow,
-            samples: [outdated], now: now))
-        let emptyTrend = try XCTUnwrap(UsageTrend(providerID: "codex", window: baseWindow,
-            samples: [], now: now))
-
-        XCTAssertEqual(oldTrend.displayRange(now: now, fullWindow: false), oldTrend.start...oldTrend.end)
-        XCTAssertEqual(emptyTrend.displayRange(now: now, fullWindow: false), emptyTrend.start...emptyTrend.end)
-    }
-
-    func testDisplayRangeIsBoundedWhenNowIsOutsideTheCycle() throws {
-        let baseWindow = window()
-        let cycle = UsageSample.CycleIdentity(providerID: "codex", windowID: baseWindow.id,
-            resetsAt: baseWindow.resetsAt!, duration: baseWindow.duration!)
-        let sample = UsageSample(cycle: cycle, measuredAt: start.addingTimeInterval(60), remainingFraction: 0.9)
-        let trend = try XCTUnwrap(UsageTrend(providerID: "codex", window: baseWindow,
-            samples: [sample], now: baseWindow.resetsAt!))
-
-        for now in [start.addingTimeInterval(-3600), baseWindow.resetsAt!.addingTimeInterval(3600)] {
-            let range = trend.displayRange(now: now, fullWindow: false)
-            XCTAssertGreaterThan(range.upperBound, range.lowerBound)
-            XCTAssertGreaterThanOrEqual(range.lowerBound, trend.start)
-            XCTAssertLessThanOrEqual(range.upperBound, trend.end)
+    func testDisplayRangeAlwaysCoversTheWholeCycleWithShortHistory() throws {
+        for duration in [18000.0, 604800.0] {
+            let end = start.addingTimeInterval(duration)
+            let cycle = UsageSample.CycleIdentity(providerID: "codex", windowID: "primary",
+                                                  resetsAt: end, duration: duration)
+            let sample = UsageSample(cycle: cycle, measuredAt: start.addingTimeInterval(3600), remainingFraction: 0.6)
+            let window = LimitWindow(id: "primary", label: "Quota", usedFraction: 0.4,
+                                     resetsAt: end, duration: duration)
+            for samples in [[], [sample]] {
+                let trend = try XCTUnwrap(UsageTrend(providerID: "codex", window: window,
+                                                     samples: samples, now: sample.measuredAt))
+                XCTAssertEqual(trend.displayRange, start...end)
+                XCTAssertEqual(trend.displayRange.upperBound.timeIntervalSince(trend.displayRange.lowerBound), duration)
+            }
         }
     }
 }
