@@ -19643,12 +19643,12 @@
         }
       }
     },
-    "Estimate assuming the same workload. Recent readings are preferred; otherwise the average since the window began is used.": {
+    "Estimate based on total usage divided by elapsed time in the current quota window, including pauses.": {
       "localizations": {
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Schätzung bei gleichem Arbeitspensum. Bevorzugt werden aktuelle Messwerte, sonst der Durchschnitt seit Fensterbeginn."
+            "value": "Schätzung aus dem gesamten Verbrauch geteilt durch die verstrichene Zeit im aktuellen Kontingentfenster, einschließlich Pausen."
           }
         }
       }

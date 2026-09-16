@@ -284,7 +284,7 @@ final class UsageHistoryTests: XCTestCase {
         XCTAssertEqual(history.samples.last?.measuredAt, start.addingTimeInterval(300))
     }
 
-    func testForecastUsesRecentContinuousConsumptionAndClampsAtDepletion() throws {
+    func testForecastUsesEntireWindowDespiteRecentBurstAndClampsAtDepletion() throws {
         let baseWindow = window()
         let cycle = UsageSample.CycleIdentity(providerID: "codex", windowID: baseWindow.id,
             resetsAt: baseWindow.resetsAt!, duration: baseWindow.duration!)
@@ -296,14 +296,13 @@ final class UsageHistoryTests: XCTestCase {
         let trend = try XCTUnwrap(UsageTrend(providerID: "codex", window: baseWindow,
                                              samples: samples, now: now))
         let forecast = try XCTUnwrap(trend.forecast(now: now))
-        XCTAssertEqual(forecast.basis, .recent)
-        XCTAssertEqual(forecast.basisDuration, 15 * 60)
-        XCTAssertEqual(forecast.ratePerSecond, 0.15 / (15 * 60), accuracy: 0.000_000_1)
+        XCTAssertEqual(forecast.basisDuration, 45 * 60)
+        XCTAssertEqual(forecast.ratePerSecond, 0.35 / (45 * 60), accuracy: 0.000_000_1)
         XCTAssertEqual(forecast.remaining(at: forecast.origin.measuredAt), 0.65, accuracy: 0.000_001)
         XCTAssertEqual(forecast.remaining(at: try XCTUnwrap(forecast.exhaustionDate)), 0, accuracy: 0.000_001)
     }
 
-    func testForecastFallsBackToCycleAverageWithShortHistory() throws {
+    func testForecastUsesWindowAverageEvenWithOneReading() throws {
         let baseWindow = window()
         let cycle = UsageSample.CycleIdentity(providerID: "codex", windowID: baseWindow.id,
             resetsAt: baseWindow.resetsAt!, duration: baseWindow.duration!)
@@ -312,7 +311,6 @@ final class UsageHistoryTests: XCTestCase {
         let trend = try XCTUnwrap(UsageTrend(providerID: "codex", window: baseWindow,
             samples: [sample], now: sample.measuredAt))
         let forecast = try XCTUnwrap(trend.forecast(now: sample.measuredAt))
-        XCTAssertEqual(forecast.basis, .cycleAverage)
         XCTAssertEqual(forecast.basisDuration, 30 * 60)
         XCTAssertEqual(forecast.ratePerSecond, 0.3 / (30 * 60), accuracy: 0.000_000_1)
     }
@@ -333,7 +331,7 @@ final class UsageHistoryTests: XCTestCase {
         XCTAssertEqual(forecast.remaining(at: cycle.resetsAt), 1)
     }
 
-    func testForecastFlatDepletedUsageIsAlreadyExhausted() throws {
+    func testForecastDepletedUsageIsAlreadyExhausted() throws {
         let baseWindow = window()
         let cycle = UsageSample.CycleIdentity(providerID: "codex", windowID: baseWindow.id,
             resetsAt: baseWindow.resetsAt!, duration: baseWindow.duration!)
@@ -346,11 +344,11 @@ final class UsageHistoryTests: XCTestCase {
         let trend = try XCTUnwrap(UsageTrend(providerID: "codex", window: baseWindow,
             samples: samples, now: latest.measuredAt))
         let forecast = try XCTUnwrap(trend.forecast(now: latest.measuredAt))
-        XCTAssertEqual(forecast.ratePerSecond, 0)
+        XCTAssertEqual(forecast.ratePerSecond, 1 / (15 * 60), accuracy: 0.000_000_1)
         XCTAssertEqual(forecast.exhaustionDate, latest.measuredAt)
     }
 
-    func testPersistedRefillStartsASeparateForecastRun() throws {
+    func testPersistedRefillUsesCurrentWindowAllowanceAndKeepsObservedRunsSeparate() throws {
         let baseWindow = window()
         let reset = baseWindow.resetsAt!
         func cycle(_ drift: TimeInterval) -> UsageSample.CycleIdentity {
@@ -370,8 +368,7 @@ final class UsageHistoryTests: XCTestCase {
                                              samples: samples, now: now))
         XCTAssertEqual(trend.observed.map(\.count), [1, 2])
         let forecast = try XCTUnwrap(trend.forecast(now: now))
-        XCTAssertEqual(forecast.basis, .recent)
-        XCTAssertEqual(forecast.ratePerSecond, 0.1 / (15 * 60), accuracy: 0.000_000_1)
+        XCTAssertEqual(forecast.ratePerSecond, 0.2 / (45 * 60), accuracy: 0.000_000_1)
     }
 
     func testForecastRejectsStaleEndedAndInvalidNow() throws {
@@ -387,7 +384,7 @@ final class UsageHistoryTests: XCTestCase {
         XCTAssertNil(trend.forecast(now: Date(timeIntervalSince1970: .infinity)))
     }
 
-    func testForecastDoesNotBridgeOfflineRuns() throws {
+    func testForecastIncludesOfflineTimeWithoutInventingObservations() throws {
         let baseWindow = window()
         let cycle = UsageSample.CycleIdentity(providerID: "codex", windowID: baseWindow.id,
             resetsAt: baseWindow.resetsAt!, duration: baseWindow.duration!)
@@ -401,8 +398,55 @@ final class UsageHistoryTests: XCTestCase {
             samples: samples, now: latest.measuredAt))
         XCTAssertEqual(trend.observed.map(\.count), [1, 1])
         let forecast = try XCTUnwrap(trend.forecast(now: latest.measuredAt))
-        XCTAssertEqual(forecast.basis, .cycleAverage)
         XCTAssertEqual(forecast.basisDuration, 2 * 3600)
+    }
+
+    func testWindowForecastIsIndependentOfHistoryGapsDensityAndRecentPauses() throws {
+        for (provider, windowID, duration) in [
+            ("codex", "secondary", 604800.0),
+            ("claude", "weekly_fable", 604800.0),
+            ("claude", "weekly_all", 604800.0),
+            ("claude", "session", 18000.0)
+        ] {
+            let elapsed = duration * 0.75
+            let currentWindow = window(id: windowID, used: 0.62, duration: duration, resetOffset: duration)
+            let cycle = UsageSample.CycleIdentity(providerID: provider, windowID: windowID,
+                                                  resetsAt: currentWindow.resetsAt!, duration: duration)
+            func reading(_ at: Double, _ remaining: Double) -> UsageSample {
+                UsageSample(cycle: cycle, measuredAt: start.addingTimeInterval(at), remainingFraction: remaining)
+            }
+            let latest = reading(elapsed, 0.38)
+            let histories = [
+                [latest],
+                [reading(3600, 0.9), latest], // Long offline gap.
+                [reading(elapsed - 1800, 0.38), reading(elapsed - 900, 0.38), latest], // Recent pause.
+                [reading(elapsed - 1800, 0.8), reading(elapsed - 900, 0.6), latest] // Recent burst.
+            ]
+            var reference: UsageTrend.Forecast?
+            for samples in histories {
+                let trend = try XCTUnwrap(UsageTrend(providerID: provider, window: currentWindow,
+                                                      samples: samples, now: latest.measuredAt))
+                let forecast = try XCTUnwrap(trend.forecast(now: latest.measuredAt))
+                XCTAssertEqual(forecast.ratePerSecond, 0.62 / elapsed, accuracy: 0.000_000_001)
+                XCTAssertEqual(forecast.basisDuration, elapsed)
+                XCTAssertGreaterThan(try XCTUnwrap(forecast.exhaustionDate), trend.end,
+                                     "62% spent after 75% of the cycle must last until reset")
+                if let reference { XCTAssertEqual(forecast, reference) }
+                reference = forecast
+                // Moving the UI clock does not reinterpret a cached reading as a new observation.
+                XCTAssertEqual(trend.forecast(now: latest.measuredAt.addingTimeInterval(60)), forecast)
+            }
+        }
+    }
+
+    func testForecastNeedsElapsedTimeInTheCurrentWindow() throws {
+        let currentWindow = window()
+        let cycle = UsageSample.CycleIdentity(providerID: "codex", windowID: currentWindow.id,
+            resetsAt: currentWindow.resetsAt!, duration: currentWindow.duration!)
+        let sample = UsageSample(cycle: cycle, measuredAt: start, remainingFraction: 1)
+        let trend = try XCTUnwrap(UsageTrend(providerID: "codex", window: currentWindow,
+                                             samples: [sample], now: start))
+        XCTAssertNil(trend.forecast(now: start))
     }
 
     func testObservationGapsExposeLongMonotonicOfflineGap() throws {

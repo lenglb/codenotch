@@ -161,9 +161,7 @@ private struct UsageWindowChart: View {
         let lastsText: String
         let runsOut: Bool
         if let forecast {
-            basisText = forecast.basis == .recent
-                ? L10n.t("Forecast") + ": " + L10n.t("last") + " " + interval(forecast.basisDuration)
-                : L10n.t("Forecast: average since window start")
+            basisText = L10n.t("Forecast: average since window start")
             runsOut = forecast.exhaustionDate.map { $0 < trend.end } ?? false
             if let exhausted = forecast.exhaustionDate, exhausted <= now {
                 lastsText = L10n.t("Exhausted")
@@ -189,7 +187,7 @@ private struct UsageWindowChart: View {
                 Text(lastsText).foregroundStyle(runsOut ? Palette.critical : accent)
             }
             Text(basisText)
-                .help(L10n.t("Estimate assuming the same workload. Recent readings are preferred; otherwise the average since the window began is used."))
+                .help(L10n.t("Estimate based on total usage divided by elapsed time in the current quota window, including pauses."))
         }
         .foregroundStyle(Palette.textSecondary)
         .lineLimit(1)

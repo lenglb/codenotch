@@ -271,11 +271,8 @@ struct UsageTrend: Equatable {
     }
 
     struct Forecast: Equatable {
-        enum Basis: Equatable { case recent, cycleAverage }
-
         let origin: UsageSample
         let ratePerSecond: Double
-        let basis: Basis
         let basisDuration: TimeInterval
         let exhaustionDate: Date?
 
@@ -292,25 +289,13 @@ struct UsageTrend: Equatable {
               now.timeIntervalSince(latest.measuredAt) <= UsageHistory.resolution
         else { return nil }
 
-        let recentCutoff = latest.measuredAt.addingTimeInterval(-60 * 60)
-        let recent = run.filter { $0.measuredAt >= recentCutoff }
-        let firstRecent = recent.first
-        let recentDuration = firstRecent.map { latest.measuredAt.timeIntervalSince($0.measuredAt) } ?? 0
-
-        let rate: Double
-        let basis: Forecast.Basis
-        let basisDuration: TimeInterval
-        if let firstRecent, recentDuration >= UsageHistory.resolution {
-            rate = max(0, (firstRecent.remainingFraction - latest.remainingFraction) / recentDuration)
-            basis = .recent
-            basisDuration = recentDuration
-        } else {
-            let elapsed = latest.measuredAt.timeIntervalSince(start)
-            guard elapsed > 0 else { return nil }
-            rate = max(0, (1 - latest.remainingFraction) / elapsed)
-            basis = .cycleAverage
-            basisDuration = elapsed
-        }
+        // The provider's remaining quota describes consumption across the
+        // entire current cycle, including time before local recording began.
+        // Use that cumulative consumption and its real observation timestamp;
+        // gaps, pauses and the density of local samples must not change pace.
+        let elapsed = latest.measuredAt.timeIntervalSince(start)
+        guard elapsed > 0 else { return nil }
+        let rate = (1 - latest.remainingFraction) / elapsed
         guard rate.isFinite else { return nil }
         let exhaustion: Date?
         if latest.remainingFraction <= 0 {
@@ -321,7 +306,7 @@ struct UsageTrend: Equatable {
         } else {
             exhaustion = nil
         }
-        return Forecast(origin: latest, ratePerSecond: rate, basis: basis,
-                        basisDuration: basisDuration, exhaustionDate: exhaustion)
+        return Forecast(origin: latest, ratePerSecond: rate,
+                        basisDuration: elapsed, exhaustionDate: exhaustion)
     }
 }
