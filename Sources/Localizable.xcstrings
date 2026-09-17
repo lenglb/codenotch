@@ -19732,6 +19732,46 @@
           }
         }
       }
+    },
+    "used": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "genutzt"
+          }
+        }
+      }
+    },
+    "Used": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Genutzt"
+          }
+        }
+      }
+    },
+    "Used quota, 15 minute steps": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Genutztes Kontingent, 15-Minuten-Schritte"
+          }
+        }
+      }
+    },
+    "Positive means more used than the target; negative means less used.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Positiv bedeutet mehr genutzt als vorgesehen, negativ bedeutet weniger genutzt."
+          }
+        }
+      }
     }
   },
   "version": "1.0"

@@ -1,6 +1,6 @@
 ## Personal fork: usage pacing
 
-This personal fork adds usage pacing charts: Codex Weekly, plus Claude Fable Weekly, five-hour and All Models Weekly in that order. Compare actual remaining quota against an even pace and a dashed consumption forecast with estimated time left. Inspect each chart in 15-minute steps. Sessions are collapsed by default. The original design is retained. [Usage, limitations and building](docs/usage-trend.md). Upstream automatic updates are disabled for this custom build. The downloads described below are the original app, without this fork’s changes.
+This personal fork adds usage pacing charts: Codex Weekly, plus Claude Fable Weekly, five-hour and All Models Weekly in that order. Both providers show used quota consistently. Compare actual usage against an even pace and a dashed consumption forecast with estimated time left. Inspect each chart in 15-minute steps. Sessions are collapsed by default. The original design is retained. [Usage, limitations and building](docs/usage-trend.md). Upstream automatic updates are disabled for this custom build. The downloads described below are the original app, without this fork’s changes.
 
 ---
 

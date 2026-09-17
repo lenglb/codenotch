@@ -76,7 +76,7 @@ private struct UsageWindowChart: View {
                         .minimumScaleFactor(0.75)
                         .help([window.group, window.label].compactMap { $0 }.joined(separator: " · "))
                     Spacer(minLength: Design.px(8))
-                    Text(percent(1 - min(window.usedFraction ?? 0, 1)) + " " + L10n.t("remaining"))
+                    Text(percent(min(window.usedFraction ?? 0, 1)) + " " + L10n.t("used"))
                         .monospacedDigit()
                 }
                 .foregroundStyle(Palette.textPrimary)
@@ -115,23 +115,24 @@ private struct UsageWindowChart: View {
         let reference = date
         let prediction = date > now ? trend.forecast(now: now)?.remaining(at: date) : nil
         let remaining = sample?.remainingFraction ?? prediction
-        let delta = remaining.map { $0 - trend.idealRemaining(at: date) }
+        let delta = remaining.map { trend.idealRemaining(at: date) - $0 }
         return VStack(alignment: .leading, spacing: Design.px(8)) {
             HStack {
                 Text(reference.formatted(.dateTime.weekday(.abbreviated).hour().minute()))
                 Spacer(minLength: 0)
-                Text(L10n.t("Target") + " " + percent(trend.idealRemaining(at: reference)))
+                Text(L10n.t("Target") + " " + percent(1 - trend.idealRemaining(at: reference)))
             }
             .foregroundStyle(Palette.textSecondary)
             HStack {
-                Text(sample.map { L10n.t("Remaining") + " " + percent($0.remainingFraction) }
-                     ?? prediction.map { L10n.t("Forecast") + " " + percent($0) }
+                Text(sample.map { L10n.t("Used") + " " + percent(1 - $0.remainingFraction) }
+                     ?? prediction.map { L10n.t("Forecast") + " " + percent(1 - $0) }
                      ?? (isGap ? L10n.t("Measurement gap") : date > now ? L10n.t("Future target") : L10n.t("No reading at this time")))
                     .foregroundStyle(Palette.textPrimary)
                 Spacer(minLength: 0)
                 if let delta {
                     Text(String(format: "%+.1f pp", delta * 100))
-                        .foregroundStyle(delta < 0 ? Palette.critical : accent)
+                        .foregroundStyle(delta > 0 ? Palette.critical : accent)
+                        .help(L10n.t("Positive means more used than the target; negative means less used."))
                 }
             }
             Text(sample.map { L10n.t("Reading") + " " + $0.measuredAt.formatted(.dateTime.hour().minute()) }
@@ -225,7 +226,7 @@ struct UsageTrendPlot: View {
         let range = displayRange
         VStack(spacing: Design.px(10)) {
             HStack(spacing: Design.px(8)) {
-                Text(L10n.t("Budget"))
+                Text(L10n.t("Usage"))
                     .foregroundStyle(Palette.textPrimary)
                 Spacer(minLength: 0)
                 Text("− " + L10n.t("Actual")).foregroundStyle(accent)
@@ -311,7 +312,7 @@ struct UsageTrendPlot: View {
                     }
                 }
                 .gesture(DragGesture(minimumDistance: 0).onChanged { inspect(x: $0.location.x, width: size.width) })
-                .accessibilityLabel(L10n.t("Remaining budget, 15 minute steps"))
+                .accessibilityLabel(L10n.t("Used quota, 15 minute steps"))
                 .accessibilityValue(selected.formatted(.dateTime.weekday().hour().minute()))
                 .accessibilityAdjustableAction { step($0 == .increment ? 1 : -1) }
             }
@@ -355,7 +356,9 @@ struct UsageTrendPlot: View {
         date.timeIntervalSince(range.lowerBound)
             / range.upperBound.timeIntervalSince(range.lowerBound) * size.width
     }
-    private func y(_ remaining: Double, _ size: CGSize) -> CGFloat { (1 - remaining) * size.height }
+    // Stored history and forecasts retain remaining quota; the shared display
+    // converts it to used quota (0% at the bottom, 100% at the top).
+    private func y(_ remaining: Double, _ size: CGSize) -> CGFloat { remaining * size.height }
     private func point(_ date: Date, _ remaining: Double, _ size: CGSize, _ range: ClosedRange<Date>) -> CGPoint {
         CGPoint(x: x(date, size, range), y: y(remaining, size))
     }
