@@ -69,6 +69,43 @@ final class DockProviderTests: XCTestCase {
         }
     }
 
+    func testDockGlyphAndPercentageHaveContrastingInkInBothAppearances() throws {
+        let output = ProcessInfo.processInfo.environment["TREND_RENDER_DIR"]
+        for (id, glyph) in [("codex", ProviderGlyph.openai), ("claude", .claude), ("gemini", .antigravity)] {
+            let snapshot = ProviderSnapshot(id: id, displayName: id, glyph: glyph,
+                fidelity: .official, status: .ok,
+                windows: [LimitWindow(id: "session", label: "Session", usedFraction: 0.14)], headlineID: "session")
+            for dark in [false, true] {
+                let appearance = try XCTUnwrap(NSAppearance(named: dark ? .darkAqua : .aqua))
+                let png = try XCTUnwrap(DockIconRenderer.png(snapshot: snapshot, weeklyRing: .outside,
+                    accent: .system, appearance: appearance))
+                let bitmap = try XCTUnwrap(NSBitmapImageRep(data: png))
+                let background = try XCTUnwrap(bitmap.colorAt(x: bitmap.pixelsWide / 2,
+                    y: Int(Double(bitmap.pixelsHigh) * 0.9))?.usingColorSpace(.sRGB))
+                XCTAssertGreaterThan(background.alphaComponent, 0.95)
+                if dark { XCTAssertLessThan(background.redComponent, 0.25) }
+                else { XCTAssertGreaterThan(background.redComponent, 0.8) }
+                // Check the actual foreground pixels independently for the
+                // central logo and the percentage, excluding the usage ring.
+                for (label, region) in [("logo", CGRect(x: 0.38, y: 0.2, width: 0.24, height: 0.35)),
+                                        ("percentage", CGRect(x: 0.25, y: 0.68, width: 0.5, height: 0.2))] {
+                    var inkPixels = 0
+                    for y in Int(region.minY * Double(bitmap.pixelsHigh))..<Int(region.maxY * Double(bitmap.pixelsHigh)) {
+                        for x in Int(region.minX * Double(bitmap.pixelsWide))..<Int(region.maxX * Double(bitmap.pixelsWide)) {
+                            guard let color = bitmap.colorAt(x: x, y: y)?.usingColorSpace(.sRGB), color.alphaComponent > 0.95 else { continue }
+                            let rgb = [color.redComponent, color.greenComponent, color.blueComponent]
+                            if dark ? rgb.allSatisfy({ $0 > 0.7 }) : rgb.allSatisfy({ $0 < 0.3 }) { inkPixels += 1 }
+                        }
+                    }
+                    XCTAssertGreaterThan(inkPixels, 30, "\(id) \(label) must have contrasting ink in \(dark ? "dark" : "light") mode")
+                }
+                if let output {
+                    try png.write(to: URL(fileURLWithPath: output).appendingPathComponent("dock-\(dark ? "dark" : "light")-\(id).png"))
+                }
+            }
+        }
+    }
+
     func testDockIconsRenderProviderUsageAndUnknownStatesDifferently() throws {
         let output = ProcessInfo.processInfo.environment["TREND_RENDER_DIR"]
         for (id, glyph) in [("codex", ProviderGlyph.openai), ("claude", .claude), ("gemini", .antigravity)] {

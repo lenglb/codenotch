@@ -270,7 +270,9 @@ The app itself can show a Dock icon, a menu bar icon, or neither.
 ### Provider charts in the macOS Dock (personal fork)
 
 Enable **Nutzungsringe im macOS-Dock** in Settings → Appearance for separate
-Codex, Claude and Antigravity usage icons. Hover briefly over an icon to see
+Codex, Claude and Antigravity usage icons. Logos, percentages and backgrounds
+adapt together to the Mac’s light or dark appearance, including changes while
+the app is running. Hover briefly over an icon to see
 its charts without switching applications. Move into the preview to inspect
 the charts; moving away dismisses it. Click the icon or the preview to keep
 that same window open until you close it.

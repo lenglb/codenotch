@@ -17,6 +17,10 @@ final class DockProviderCoordinator {
     private(set) var session = UUID().uuidString
     private var isEnabled = false
     private var terminationObserver: NSObjectProtocol?
+    private var appearanceObservation: NSKeyValueObservation?
+    private var latestSnapshots: [ProviderSnapshot] = []
+    private var latestWeeklyRing: WeeklyRing = .off
+    private var latestAccent: AccentColorChoice = .system
     private var restartCounts: [String: Int] = [:]
     private let directory: URL
     private var observer: NSObjectProtocol?
@@ -33,6 +37,13 @@ final class DockProviderCoordinator {
     init(directory: URL? = nil) {
         self.directory = directory ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("Codenotch/DockImages", isDirectory: true)
+        appearanceObservation = NSApp.observe(\.effectiveAppearance, options: [.new]) { [weak self] _, _ in
+            Task { @MainActor [weak self] in
+                guard let self, self.isEnabled else { return }
+                self.update(self.latestSnapshots, enabled: true,
+                            weeklyRing: self.latestWeeklyRing, accent: self.latestAccent)
+            }
+        }
         terminationObserver = NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.didTerminateApplicationNotification, object: nil, queue: .main
         ) { [weak self] note in
@@ -81,7 +92,12 @@ final class DockProviderCoordinator {
                 weeklyRing: WeeklyRing, accent: AccentColorChoice) {
         guard enabled else { stop(); return }
         if !isEnabled { beginSession() }
-        let currentStyle = "\(weeklyRing.rawValue):\(accent.rawValue)"
+        latestSnapshots = snapshots
+        latestWeeklyRing = weeklyRing
+        latestAccent = accent
+        let appearance = NSApp.effectiveAppearance
+        let theme = appearance.bestMatch(from: [.aqua, .darkAqua])?.rawValue ?? ""
+        let currentStyle = "\(weeklyRing.rawValue):\(accent.rawValue):\(theme)"
         if currentStyle != style { readings.removeAll(); style = currentStyle }
         let supported = snapshots.filter { Self.providers[$0.id] != nil }
         desired = Set(supported.map(\.id))
@@ -95,7 +111,7 @@ final class DockProviderCoordinator {
             for snapshot in supported {
                 let id = snapshot.id
                 if readings[id] != snapshot {
-                    guard let data = DockIconRenderer.png(snapshot: snapshot, weeklyRing: weeklyRing, accent: accent) else {
+                    guard let data = DockIconRenderer.png(snapshot: snapshot, weeklyRing: weeklyRing, accent: accent, appearance: appearance) else {
                         throw CocoaError(.fileWriteUnknown)
                     }
                     if images[id] != data {
