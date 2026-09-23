@@ -302,3 +302,30 @@ final class ScaledMeasurementTests: XCTestCase {
                        marginBound * 2, accuracy: 0.001)
     }
 }
+
+
+extension PanelOffsetTests {
+    func testConstrainedOffsetsPreserveFramesAndAreIdempotent() {
+        let screens = [screen, FakeScreen(
+            frameValue: CGRect(x: -1800, y: -200, width: 1800, height: 1169),
+            visibleFrameValue: .zero)]
+        for display in screens {
+            for edge in NotchEdge.allCases {
+                for size in [CGSize(width: 334.25, height: 484.5), CGSize(width: 2500, height: 2500)] {
+                    for offset: CGFloat in [-100_000, -27.25, 0, 73.5, 100_000] {
+                        func bound(_ value: CGFloat) -> CGFloat {
+                            NotchGeometry.constrainedOffset(value, for: display, panelSize: size,
+                                edge: edge, slack: 120, trailingExtent: 40)
+                        }
+                        func frame(_ value: CGFloat) -> CGRect {
+                            NotchGeometry.panelFrame(for: display, panelSize: size, edge: edge,
+                                alongOffset: value, slack: 120, trailingExtent: 40)
+                        }
+                        XCTAssertEqual(bound(bound(offset)), bound(offset), accuracy: 0.0001)
+                        XCTAssertEqual(frame(bound(offset)), frame(offset))
+                    }
+                }
+            }
+        }
+    }
+}

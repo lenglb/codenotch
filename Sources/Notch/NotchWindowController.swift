@@ -340,19 +340,17 @@ final class NotchWindowController {
         updateInteractiveRects()
     }
 
-    /// Feeds a raw pointer delta from an ⌥-drag into `model.alongOffset` and
-    /// re-places the panel at once, so the pill tracks the cursor rather than
-    /// catching up once the button lifts.
-    ///
-    /// Both deltas are used as `NSEvent` reports them, unflipped: `deltaY`
-    /// positive is the pointer moving *down* the screen, `deltaX` positive is
-    /// it moving *right*. `NotchGeometry` is written to match — it subtracts
-    /// the offset from a vertical edge's y (which AppKit grows *up*, so
-    /// subtracting more moves the pill down) and adds it to a horizontal
-    /// edge's x — so no sign flip belongs here; adding one would make the
-    /// pill run away from the cursor instead of following it.
+    /// Pointer deltas use down/right as positive, matching the edge offset.
     private func dragged(dx: CGFloat, dy: CGFloat) {
-        model.alongOffset += model.edge.isVertical ? dy : dx
+        guard let screen = currentScreen() else { return }
+        func bounded(_ offset: CGFloat) -> CGFloat {
+            NotchGeometry.constrainedOffset(
+                offset, for: screen, panelSize: model.panelSize, edge: model.edge,
+                slack: model.slack, trailingExtent: model.trailingExtent
+            )
+        }
+        // Normalize old persisted offsets before adding the new movement too.
+        model.alongOffset = bounded(bounded(model.alongOffset) + (model.edge.isVertical ? dy : dx))
         relocate()
     }
 
@@ -514,7 +512,7 @@ final class NotchWindowController {
         }
         hostingView?.interactiveRects = rects
         if let panel {
-            panel.ignoresMouseEvents = !rects.contains { $0.contains(localCursor(in: panel.frame)) }
+            panel.ignoresMouseEvents = !isOptionDragging && !rects.contains { $0.contains(localCursor(in: panel.frame)) }
         }
     }
 

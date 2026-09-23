@@ -416,7 +416,11 @@ final class NotchFleet {
         controller.onOpenSettings = onOpenSettings
         controller.model.onOpenSettings = onOpenSettings
         controller.model.onFocusSession = onFocusSession
-        controller.onReposition = onReposition
+        controller.onReposition = { [weak self] offset in
+            guard let self else { return }
+            self.apply(alongOffset: offset)
+            self.onReposition?(offset)
+        }
         controller.onMoveToEdge = onMoveToEdge
         controller.onToggleKeepOpen = onToggleKeepOpen
         controller.signInItems = signInItems

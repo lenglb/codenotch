@@ -912,3 +912,155 @@ final class PhysicalPanelIntegrationTests: XCTestCase {
         }
     }
 }
+
+/// Exercise NSWindow dispatch, not mouseDown directly: SwiftUI normally owns
+/// the hit view and consumed the Option-click before the old handler saw it.
+@MainActor
+final class NotchDragTests: XCTestCase {
+    private final class ConsumingView: NSView {
+        var clicks = 0
+        override func mouseDown(with event: NSEvent) { clicks += 1 }
+        override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+    }
+
+    private func send(_ type: NSEvent.EventType, to panel: NotchPanel,
+                      screen: CGPoint, option: Bool = false) throws {
+        let event = try XCTUnwrap(NSEvent.mouseEvent(
+            with: type, location: panel.convertPoint(fromScreen: screen),
+            modifierFlags: option ? [.option] : [], timestamp: 1,
+            windowNumber: panel.windowNumber, context: nil, eventNumber: 1,
+            clickCount: 1, pressure: type == .leftMouseUp ? 0 : 1))
+        panel.sendEvent(event)
+    }
+
+    func testOptionDragPreemptsAConsumingChildAndTracksAcrossWindowMovement() throws {
+        let panel = NotchPanel(contentRect: CGRect(x: 100, y: 100, width: 200, height: 200))
+        defer { panel.close() }
+        let child = ConsumingView(frame: CGRect(x: 0, y: 0, width: 200, height: 200))
+        panel.contentView = child
+        panel.orderFront(nil)
+        var starts = 0, ends = 0, clicks = 0
+        var movement = CGPoint.zero
+        panel.onDragStart = { starts += 1 }
+        panel.onDragEnd = { ends += 1 }
+        panel.onClick = { _ in clicks += 1 }
+        panel.onDrag = { dx, dy in
+            movement.x += dx; movement.y += dy
+            panel.setFrameOrigin(CGPoint(x: panel.frame.minX + dx, y: panel.frame.minY - dy))
+        }
+        try send(.leftMouseDown, to: panel, screen: CGPoint(x: 150, y: 150), option: true)
+        try send(.leftMouseDragged, to: panel, screen: CGPoint(x: 180, y: 130), option: true)
+        // Releasing Option must not end the gesture or produce a click.
+        try send(.leftMouseDragged, to: panel, screen: CGPoint(x: 200, y: 120))
+        try send(.leftMouseUp, to: panel, screen: CGPoint(x: 200, y: 120))
+        XCTAssertEqual(starts, 1); XCTAssertEqual(ends, 1)
+        XCTAssertEqual(movement, CGPoint(x: 50, y: 30))
+        XCTAssertEqual(child.clicks, 0); XCTAssertEqual(clicks, 0)
+        // The next ordinary click must still reach the child.
+        try send(.leftMouseDown, to: panel, screen: CGPoint(x: 200, y: 120))
+        try send(.leftMouseUp, to: panel, screen: CGPoint(x: 200, y: 120))
+        XCTAssertEqual(child.clicks, 1)
+    }
+
+    func testHidingThePanelEndsACapturedGestureOnlyOnce() throws {
+        let panel = NotchPanel(contentRect: CGRect(x: 100, y: 100, width: 200, height: 200))
+        defer { panel.close() }
+        panel.contentView = ConsumingView(frame: CGRect(x: 0, y: 0, width: 200, height: 200))
+        var ends = 0
+        panel.onDrag = { _, _ in XCTFail("A hidden panel must not keep the old gesture") }
+        panel.onDragEnd = { ends += 1 }
+        try send(.leftMouseDown, to: panel, screen: CGPoint(x: 150, y: 150), option: true)
+        panel.orderOut(nil)
+        XCTAssertEqual(ends, 1)
+        try send(.leftMouseUp, to: panel, screen: CGPoint(x: 150, y: 150))
+        panel.close()
+        XCTAssertEqual(ends, 1)
+    }
+
+    func testOptionClickInTransparentPaddingDoesNotStartADrag() throws {
+        let panel = NotchPanel(contentRect: CGRect(x: 100, y: 100, width: 200, height: 200))
+        defer { panel.close() }
+        let container = NotchContainerView(frame: CGRect(x: 0, y: 0, width: 200, height: 200))
+        container.addSubview(ConsumingView(frame: CGRect(x: 0, y: 0, width: 30, height: 30)))
+        panel.contentView = container
+        var starts = 0
+        panel.onDragStart = { starts += 1 }
+        panel.onDrag = { _, _ in XCTFail("Padding must stay click-through") }
+        try send(.leftMouseDown, to: panel, screen: CGPoint(x: 200, y: 200), option: true)
+        try send(.leftMouseUp, to: panel, screen: CGPoint(x: 200, y: 200))
+        XCTAssertEqual(starts, 0)
+    }
+
+    func testRealHostingViewMovesOnEveryEdgeAndPersistsOnlyOnRelease() throws {
+        for edge in NotchEdge.allCases {
+            let controller = NotchWindowController()
+            controller.model.updateSnapshots(Array(Fixtures.snapshots().prefix(3)))
+            controller.model.edge = edge
+            controller.model.isExpanded = true
+            controller.relocate()
+            defer { controller.stop() }
+            let panel = try XCTUnwrap(controller.panelContentViewForTesting?.window as? NotchPanel)
+            panel.contentView?.layoutSubtreeIfNeeded()
+            let model = controller.model
+            let local = NotchPlacement(edge: edge, panelSize: panel.frame.size).point(
+                along: model.slack + model.ringCenter(index: 0) * model.sizeScale,
+                across: (model.contentInset + NotchLayout.bodyDepth(for: edge) / 2) * model.sizeScale)
+            let start = panel.convertPoint(toScreen: CGPoint(x: local.x, y: panel.frame.height - local.y))
+            let finish = CGPoint(x: start.x + (edge.isVertical ? 0 : 35),
+                                 y: start.y - (edge.isVertical ? 35 : 0))
+            var saved: [CGFloat] = []
+            controller.onReposition = { saved.append($0) }
+            let original = panel.frame.origin
+            try send(.leftMouseDown, to: panel, screen: start, option: true)
+            try send(.leftMouseDragged, to: panel, screen: finish, option: true)
+            XCTAssertEqual(model.alongOffset, 35, accuracy: 0.01, "\(edge)")
+            XCTAssertEqual(panel.frame.minX - original.x, edge.isVertical ? 0 : 35, accuracy: 0.5)
+            XCTAssertEqual(panel.frame.minY - original.y, edge.isVertical ? -35 : 0, accuracy: 0.5)
+            XCTAssertFalse(panel.ignoresMouseEvents, "Keep capturing when the pointer leaves the chrome")
+            XCTAssertTrue(saved.isEmpty)
+            try send(.leftMouseUp, to: panel, screen: finish)
+            XCTAssertEqual(saved, [35])
+        }
+    }
+
+    func testDraggingBackFromEitherScreenEndMovesImmediately() throws {
+        for edge in NotchEdge.allCases {
+            for sign: CGFloat in [-1, 1] {
+                let controller = NotchWindowController()
+                controller.model.updateSnapshots(Array(Fixtures.snapshots().prefix(3)))
+                controller.model.edge = edge
+                controller.relocate()
+                defer { controller.stop() }
+                let panel = try XCTUnwrap(controller.panelContentViewForTesting?.window as? NotchPanel)
+                // An out-of-bounds preference from an older version must also recover.
+                controller.model.alongOffset = sign * 100_000
+                panel.onDragStart?()
+                panel.onDrag?(sign * 100_000, sign * 100_000)
+                XCTAssertLessThan(abs(controller.model.alongOffset), 100_000)
+                let end = panel.frame.origin
+                panel.onDrag?(-sign * 12, -sign * 12)
+                XCTAssertEqual(panel.frame.minX - end.x, edge.isVertical ? 0 : -sign * 12, accuracy: 0.5)
+                XCTAssertEqual(panel.frame.minY - end.y, edge.isVertical ? sign * 12 : 0, accuracy: 0.5)
+                panel.onDragEnd?()
+            }
+        }
+    }
+
+    func testFleetRemembersDragForOtherAndRecreatedControllers() throws {
+        let fleet = NotchFleet(scope: .allDisplays, edge: .bottom)
+        fleet.show()
+        defer { fleet.stop() }
+        let source = try XCTUnwrap(fleet.controllersForTesting.first)
+        var saved: [CGFloat] = []
+        fleet.onReposition = { saved.append($0) }
+        source.onReposition?(73)
+        XCTAssertEqual(saved, [73])
+        XCTAssertTrue(fleet.controllersForTesting.allSatisfy { $0.model.alongOffset == 73 })
+        // Recreating simulates a display arriving after the drag, even on a
+        // machine with only one display attached during the test.
+        fleet.stop()
+        fleet.show()
+        XCTAssertFalse(fleet.controllersForTesting.isEmpty)
+        XCTAssertTrue(fleet.controllersForTesting.allSatisfy { $0.model.alongOffset == 73 })
+    }
+}

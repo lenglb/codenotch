@@ -119,6 +119,28 @@ enum NotchGeometry {
         )
     }
 
+    /// Bound the stored drag position as well as its rendered frame. Otherwise
+    /// dragging past the screen accumulates an invisible overshoot that must
+    /// be unwound before the widget moves back.
+    static func constrainedOffset(
+        _ offset: CGFloat, for screen: ScreenDescribing, panelSize: CGSize,
+        edge: NotchEdge, slack: CGFloat, trailingExtent: CGFloat
+    ) -> CGFloat {
+        let full = screen.frameValue
+        if edge.isVertical {
+            let height = panelSize.height.rounded(.up)
+            let centre = full.midY - height / 2
+            let y = clamp(centre - offset, min: full.minY - slack + trailingExtent,
+                          max: full.maxY - height + slack)
+            return centre - y
+        }
+        let width = panelSize.width.rounded(.up)
+        let centre = full.midX - width / 2
+        let x = clamp(centre + offset, min: full.minX - slack,
+                      max: full.maxX - width + slack - trailingExtent)
+        return x - centre
+    }
+
     static func preferredScreen(
         from screens: [NSScreen],
         preference: DisplayPreference = .followActiveWindow

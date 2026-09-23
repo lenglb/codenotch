@@ -21,46 +21,60 @@ final class NotchPanel: NSPanel {
     /// The ⌥-drag ended. Where to persist the offset the drags above moved to.
     var onDragEnd: (() -> Void)?
 
+    private var dragScreenPoint: CGPoint?
+
     override func sendEvent(_ event: NSEvent) {
+        // Capture the whole gesture before a SwiftUI child can consume its
+        // mouseDown. Keep dispatch non-blocking so normal AppKit tracking and
+        // redraws continue, including after Option is released mid-drag.
+        if let previous = dragScreenPoint {
+            if event.type == .leftMouseDragged {
+                let point = convertPoint(toScreen: event.locationInWindow)
+                dragScreenPoint = point
+                onDrag?(point.x - previous.x, previous.y - point.y)
+                return
+            }
+            if event.type == .leftMouseUp {
+                finishOptionDrag()
+                return
+            }
+        }
+        if event.type == .leftMouseDown,
+           event.modifierFlags.contains(.option), onDrag != nil,
+           contentView?.hitTest(event.locationInWindow) != nil {
+            dragScreenPoint = convertPoint(toScreen: event.locationInWindow)
+            onDragStart?()
+            return
+        }
         guard event.type == .rightMouseDown,
               let menu = contextMenuProvider?(),
               let view = contentView,
-              // Only over the visible chrome; elsewhere the panel is a hole.
               view.hitTest(event.locationInWindow) != nil
         else { return super.sendEvent(event) }
-
         NSMenu.popUpContextMenu(menu, with: event, for: view)
+    }
+
+    private func finishOptionDrag() {
+        guard dragScreenPoint != nil else { return }
+        dragScreenPoint = nil
+        onDragEnd?()
+    }
+
+    override func orderOut(_ sender: Any?) {
+        finishOptionDrag()
+        super.orderOut(sender)
+    }
+
+    override func close() {
+        finishOptionDrag()
+        super.close()
     }
 
     override func mouseDown(with event: NSEvent) {
         guard let view = contentView, view.hitTest(event.locationInWindow) != nil else {
             return super.mouseDown(with: event)
         }
-        guard event.modifierFlags.contains(.option), onDrag != nil else {
-            onClick?(event.locationInWindow)
-            return
-        }
-        onDragStart?()
-        trackOptionDrag()
-    }
-
-    /// Blocks on this window's own event stream until the button lifts, the
-    /// standard AppKit pattern for a custom drag started from `mouseDown`.
-    /// Never falls through to `onClick` on release: an ⌥-drag is a distinct
-    /// gesture from the start, not a click that grew into one, so there is
-    /// nothing to reinterpret once the button comes up.
-    private func trackOptionDrag() {
-        while let event = nextEvent(matching: [.leftMouseDragged, .leftMouseUp]) {
-            switch event.type {
-            case .leftMouseDragged:
-                onDrag?(event.deltaX, event.deltaY)
-            case .leftMouseUp:
-                onDragEnd?()
-                return
-            default:
-                return
-            }
-        }
+        onClick?(event.locationInWindow)
     }
 
     init(contentRect: NSRect) {
