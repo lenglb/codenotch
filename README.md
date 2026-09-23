@@ -267,6 +267,21 @@ teal, blue, indigo, purple and off-white.
 
 The app itself can show a Dock icon, a menu bar icon, or neither.
 
+### Provider charts in the macOS Dock (personal fork)
+
+Enable **Nutzungsringe im macOS-Dock** in Settings → Appearance for separate
+Codex, Claude and Antigravity usage icons. Hover briefly over an icon to see
+its charts without switching applications. Move into the preview to inspect
+the charts; moving away dismisses it. Click the icon or the preview to keep
+that same window open until you close it.
+
+Hover detection needs macOS **Accessibility** permission for Codenotch. The
+Appearance pane has a button to open System Settings → Privacy & Security →
+Accessibility. Enable Codenotch there; regular Dock clicks also work without
+this permission. Detection uses mouse movement near the Dock and bounded
+Accessibility queries; it does not create an additional usage polling loop.
+
+
 ## Updates
 
 Codenotch updates itself. [Sparkle](https://sparkle-project.org) checks daily

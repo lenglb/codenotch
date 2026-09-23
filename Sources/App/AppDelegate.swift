@@ -6,6 +6,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var notchFleet: NotchFleet?
     private var dockProviders: DockProviderCoordinator?
     private var providerDetails: ProviderDetailWindowController?
+    private var dockHover: DockHoverMonitor?
     private var pendingDockProvider: String?
 
     private var trendPreviewWindow: NSWindow?
@@ -106,6 +107,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let dockProviders = DockProviderCoordinator()
         self.dockProviders = dockProviders
         self.providerDetails = ProviderDetailWindowController(model: fleet.menuModel, preferences: preferences)
+        let dockHover = DockHoverMonitor()
+        self.dockHover = dockHover
+        dockHover.onHover = { [weak self] id, frame in
+            self?.providerDetails?.hover(id, iconFrame: frame)
+        }
+        dockHover.onPointerMove = { [weak self] _ in self?.providerDetails?.pointerMoved() }
+        NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)
+            .sink { [weak self] _ in
+                guard self?.preferences?.providerDockIcons == true else { return }
+                self?.dockHover?.start()
+            }
+            .store(in: &cancellables)
         dockProviders.onCommand = { [weak self] id, action in
             guard let self else { return }
             switch action {
@@ -827,8 +840,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             .removeDuplicates()
             .receive(on: RunLoop.main)
             .sink { [weak self, weak fleet] enabled in
-                if enabled { fleet?.stop() }
-                else { fleet?.show() }
+                if enabled {
+                    fleet?.stop()
+                    self?.dockHover?.start()
+                } else {
+                    self?.dockHover?.stop()
+                    self?.providerDetails?.stopHover()
+                    fleet?.show()
+                }
                 self?.updateDockProviders()
             }
             .store(in: &cancellables)
@@ -1011,6 +1030,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        dockHover?.stop()
         dockProviders?.stop()
         providerDetails?.closeAll()
         ollamaRelay?.configure(enabled: false, endpoint: OllamaEndpoint.defaultAddress)
