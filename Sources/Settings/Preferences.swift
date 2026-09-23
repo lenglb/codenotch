@@ -252,6 +252,11 @@ final class Preferences: ObservableObject {
         didSet { L10n.apply(language) }
     }
 
+    /// Separate live usage icons in the system Dock instead of the edge widget.
+    @Published var providerDockIcons: Bool {
+        didSet { defaults.set(providerDockIcons, forKey: Keys.providerDockIcons) }
+    }
+
     /// Where the app itself shows up: Dock, menu bar, or nowhere.
     @Published var appPresence: AppPresence {
         didSet { defaults.set(appPresence.rawValue, forKey: Keys.presence) }
@@ -397,6 +402,7 @@ final class Preferences: ObservableObject {
         static let visibility = "notchVisibility"
         static let foldsForFullScreen = "foldsForFullScreen"
         static let presence = "appPresence"
+        static let providerDockIcons = "providerDockIcons"
         static let edge = "notchEdge"
         // A new key, so there is nothing under the old app name to migrate.
         static let size = "notchSize"
@@ -621,6 +627,7 @@ final class Preferences: ObservableObject {
         // Absent means never chosen. The Dock is the default because it is the
         // findable one — a new user who cannot see the app anywhere has no way
         // to learn it is running.
+        self.providerDockIcons = defaults.bool(forKey: Keys.providerDockIcons)
         self.appPresence = defaults.string(forKey: Keys.presence)
             .flatMap(AppPresence.init(rawValue:)) ?? .dock
         // The right edge is where the notch has always been, and it is the one

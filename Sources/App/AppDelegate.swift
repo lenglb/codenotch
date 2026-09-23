@@ -4,6 +4,10 @@ import SwiftUI
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var notchFleet: NotchFleet?
+    private var dockProviders: DockProviderCoordinator?
+    private var providerDetails: ProviderDetailWindowController?
+    private var pendingDockProvider: String?
+
     private var trendPreviewWindow: NSWindow?
     private var store: UsageStore?
     var phoneLinkServer: PhoneLinkServer?
@@ -99,6 +103,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // notch would already have flashed on the default edge.
         let fleet = NotchFleet(scope: preferences.notchScope, edge: preferences.notchEdge)
         self.notchFleet = fleet
+        let dockProviders = DockProviderCoordinator()
+        self.dockProviders = dockProviders
+        self.providerDetails = ProviderDetailWindowController(model: fleet.menuModel, preferences: preferences)
+        dockProviders.onCommand = { [weak self] id, action in
+            guard let self else { return }
+            switch action {
+            case "details": self.openDockProvider(id)
+            case "refresh": self.store?.refresh(providerID: id)
+            case "settings": self.openSettings()
+            case "quit": NSApp.terminate(nil)
+            default: break
+            }
+        }
+        dockProviders.onFailure = { [weak self] message in
+            guard preferences.providerDockIcons else { return }
+            preferences.providerDockIcons = false
+            self?.openSettings()
+            let alert = NSAlert()
+            alert.messageText = "Dock-Symbole konnten nicht gestartet werden"
+            alert.informativeText = message + "\nDie Bildschirmleiste wurde wieder aktiviert."
+            alert.runModal()
+        }
 
         // `CODENOTCH_DEMO=1` puts the design frame's three providers on screen
         // with its numbers, for screenshots and for eyeballing the layout.
@@ -366,6 +392,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             fleet.onFocusSession = { pid in
                 Task { _ = await SessionFocus.focus(pid: pid) }
             }
+            fleet.menuModel.onFocusSession = fleet.onFocusSession
             self.settings = settings
 
             // What changed, once per version — including on a fresh install,
@@ -400,16 +427,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             statusItem.activity = { [weak fleet] in fleet?.menuModel.activity(for: $0) }
 
             preferences.$appPresence
+                .combineLatest(preferences.$providerDockIcons)
                 .receive(on: RunLoop.main)
-                .sink { presence in
-                    NSApp.setActivationPolicy(presence.activationPolicy)
+                .sink { presence, dockMode in
+                    NSApp.setActivationPolicy(dockMode ? .accessory : presence.activationPolicy)
                     if presence.wantsStatusItem { statusItem.show() } else { statusItem.hide() }
                 }
                 .store(in: &cancellables)
 
             preferences.$notchVisibility
+                .combineLatest(preferences.$providerDockIcons)
                 .receive(on: RunLoop.main)
-                .sink { [weak fleet] in fleet?.apply($0) }
+                .sink { [weak fleet] visibility, dockMode in fleet?.apply(dockMode ? .hidden : visibility) }
                 .store(in: &cancellables)
 
             preferences.$foldsForFullScreen
@@ -621,8 +650,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             store.$notchSnapshots
                 .combineLatest(preferences.$claudeDailyPaceRing)
                 .receive(on: RunLoop.main)
-                .sink { [weak fleet] snapshots, paced in
+                .sink { [weak self, weak fleet] snapshots, paced in
                     fleet?.setSnapshots(DailyPace.apply(to: snapshots, enabled: paced))
+                    self?.updateDockProviders()
+                    if let id = self?.pendingDockProvider,
+                       snapshots.contains(where: { $0.id == id }) {
+                        self?.pendingDockProvider = nil
+                        self?.providerDetails?.show(id)
+                    }
                 }
                 .store(in: &cancellables)
 
@@ -788,7 +823,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         fleet.apply(surfaceStyle: preferences.notchSurfaceStyle)
         fleet.apply(deepSeekPricingEnabled: preferences.deepSeekPricingEnabled)
         fleet.apply(deepSeekPricingSchedule: preferences.deepSeekPricingSchedule)
-        fleet.show()
+        preferences.$providerDockIcons
+            .removeDuplicates()
+            .receive(on: RunLoop.main)
+            .sink { [weak self, weak fleet] enabled in
+                if enabled { fleet?.stop() }
+                else { fleet?.show() }
+                self?.updateDockProviders()
+            }
+            .store(in: &cancellables)
+        preferences.$weeklyRing.combineLatest(preferences.$accentColor)
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _, _ in self?.updateDockProviders() }
+            .store(in: &cancellables)
+    }
+
+    @MainActor private func updateDockProviders() {
+        guard let preferences, let fleet = notchFleet else { return }
+        dockProviders?.update(fleet.menuModel.snapshots, enabled: preferences.providerDockIcons,
+                              weeklyRing: preferences.weeklyRing, accent: preferences.accentColor)
+    }
+
+    @MainActor private func openDockProvider(_ id: String) {
+        guard DockProviderCoordinator.providers[id] != nil else { return }
+        if notchFleet?.menuModel.snapshots.contains(where: { $0.id == id }) == true {
+            providerDetails?.show(id)
+        } else { pendingDockProvider = id }
+    }
+
+    func application(_ application: NSApplication, open urls: [URL]) {
+        for url in urls {
+            if let id = DockProviderCoordinator.providerID(from: url) { openDockProvider(id) }
+        }
     }
 
     /// Open the notch, and make a noise, when something has just finished.
@@ -945,6 +1011,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        dockProviders?.stop()
+        providerDetails?.closeAll()
         ollamaRelay?.configure(enabled: false, endpoint: OllamaEndpoint.defaultAddress)
         lmstudioMetrics?.stop()
         tokenRefresher?.stop()

@@ -15,7 +15,7 @@ settings:
     # silently pins every build to one version, so no customer ever sees an
     # update. Bump CURRENT_PROJECT_VERSION on every release.
     MARKETING_VERSION: "1.11.0"
-    CURRENT_PROJECT_VERSION: "13"
+    CURRENT_PROJECT_VERSION: "14"
     # Signed with a stable identity on purpose. The app reads Claude Code's
     # OAuth token out of the login keychain, and the keychain's ACL remembers
     # *which signed binary* was allowed. Ad-hoc or unsigned builds get a new
@@ -57,6 +57,21 @@ targets:
         product: NIOHTTP1
       - package: SwiftNIO
         product: NIOPosix
+      - target: Codenotch Codex
+        link: false
+      - target: Codenotch Claude
+        link: false
+      - target: Codenotch Antigravity
+        link: false
+    postCompileScripts:
+      - name: Embed provider Dock apps
+        basedOnDependencyAnalysis: false
+        script: |
+          set -eu
+          mkdir -p "$TARGET_BUILD_DIR/$CONTENTS_FOLDER_PATH/Helpers"
+          for provider in Codex Claude Antigravity; do
+            ditto "$BUILT_PRODUCTS_DIR/Codenotch $provider.app" "$TARGET_BUILD_DIR/$CONTENTS_FOLDER_PATH/Helpers/Codenotch $provider.app"
+          done
     info:
       path: Sources/Info.plist
       properties:
@@ -83,6 +98,10 @@ targets:
         CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         NSLocalNetworkUsageDescription: "Codenotch answers your phone on this network so it can show your usage."
         CodenotchForkBuild: true
+        CFBundleURLTypes:
+          - CFBundleURLName: com.vinz.codenotch.provider
+            CFBundleURLSchemes:
+              - codenotch
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.vinz.codenotch
@@ -97,6 +116,72 @@ targets:
         # Sources/Vendor/zstd/README.md. Delete this line and that directory
         # together if the Desktop source is ever dropped.
         SWIFT_OBJC_BRIDGING_HEADER: Sources/Codenotch-Bridging-Header.h
+
+  Codenotch Codex:
+    type: application
+    platform: macOS
+    sources:
+      - path: DockHelper/main.swift
+      - path: DockHelper/Icons/Codex
+    info:
+      path: DockHelper/Info-Codex.plist
+      properties:
+        CFBundleName: Codenotch Codex
+        CFBundleDisplayName: Codenotch Codex
+        CodenotchProviderID: codex
+        CFBundleIconFile: ProviderIcon
+        LSUIElement: false
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.vinz.codenotch.dock.codex
+        GENERATE_INFOPLIST_FILE: "NO"
+        SWIFT_EMIT_LOC_STRINGS: "NO"
+
+  Codenotch Claude:
+    type: application
+    platform: macOS
+    sources:
+      - path: DockHelper/main.swift
+      - path: DockHelper/Icons/Claude
+    info:
+      path: DockHelper/Info-Claude.plist
+      properties:
+        CFBundleName: Codenotch Claude
+        CFBundleDisplayName: Codenotch Claude
+        CodenotchProviderID: claude
+        CFBundleIconFile: ProviderIcon
+        LSUIElement: false
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.vinz.codenotch.dock.claude
+        GENERATE_INFOPLIST_FILE: "NO"
+        SWIFT_EMIT_LOC_STRINGS: "NO"
+
+  Codenotch Antigravity:
+    type: application
+    platform: macOS
+    sources:
+      - path: DockHelper/main.swift
+      - path: DockHelper/Icons/Antigravity
+    info:
+      path: DockHelper/Info-Antigravity.plist
+      properties:
+        CFBundleName: Codenotch Antigravity
+        CFBundleDisplayName: Codenotch Antigravity
+        CodenotchProviderID: gemini
+        CFBundleIconFile: ProviderIcon
+        LSUIElement: false
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.vinz.codenotch.dock.antigravity
+        GENERATE_INFOPLIST_FILE: "NO"
+        SWIFT_EMIT_LOC_STRINGS: "NO"
 
   CodenotchTests:
     type: bundle.unit-test

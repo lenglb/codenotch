@@ -566,6 +566,12 @@ struct SettingsView: View {
     // warning.
     private var appearancePane: some View {
         Form {
+            Section("Platzierung") {
+                Toggle("Nutzungsringe im macOS-Dock", isOn: $preferences.providerDockIcons)
+                Text("Codex, Claude und Antigravity erhalten eigene Dock-Symbole. Ein Klick öffnet die Charts. Die schwebende Leiste ist dabei ausgeblendet.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
             Section(L10n.t("Notch")) {
                 Picker(L10n.t("Reset time"), selection: $preferences.resetTimeFormat) {
                     ForEach(ResetTimeFormat.allCases) { Text($0.title).tag($0) }

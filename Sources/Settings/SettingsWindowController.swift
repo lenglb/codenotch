@@ -86,7 +86,7 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
     }
 
     func windowWillClose(_ notification: Notification) {
-        NSApp.setActivationPolicy(preferences.appPresence.activationPolicy)
+        NSApp.setActivationPolicy(preferences.providerDockIcons ? .accessory : preferences.appPresence.activationPolicy)
     }
 
     /// Sit the traffic lights in the middle of the panel's header band.
